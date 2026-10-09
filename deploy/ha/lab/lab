@@ -58,7 +58,11 @@ RUN_ALL_VERIFY_TIMEOUT=180
 RUN_ALL_VERIFY_INTERVAL=2
 RUN_ALL_ABORTED=0
 AGENTS_RECONNECT_MAX_S=90
-WIRED_MEASURES='["rto_ms", "writes", "telemetry_gap_s", "telemetry_samples_lost", "alerts_induced", "agents"]'
+PROBE_MEASURES='["rto_ms", "writes", "telemetry_gap_s", "telemetry_samples_lost", "alerts_induced", "agents"]'
+NODE_MEASURES='["local_restarts", "failover_count", "detection_delay_s", "fencing_outcome", "primary_count", "former_primary_rebuild", "sync_standby", "loss_window", "crash_confirmed", "nodes_written", "divergence"]'
+POSTGRES_MEASURES='["primary_count", "former_primary_rebuild", "sync_standby", "loss_window", "divergence"]'
+# Must match maintenant_check_log_identifier, the fencing callout and log_event of postgres_ha.
+NODE_EVENT_TAGS="maintenant-svc maintenant-fence maintenant-pg"
 
 # The bench logs in as an ordinary account: every om command, and every
 # scenario command, is run through sudo on the machine it acts on.
@@ -98,6 +102,7 @@ fi
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT INT TERM
 INV_JSON="$TMP/inventory.json"
+RUN_SETTINGS_FILE="$TMP/run-settings.json"
 
 die() {
 	printf 'lab: %s\n' "$1" >&2
@@ -594,8 +599,13 @@ measure_reasons() {
 def declared($m): $declared | index($m) != null;
 def trimmed: tostring | sub("\\s+$"; "");
 def observed($m):
-	if $observer == null then {value: null, error: ($observer_error // "the observer produced no result")}
+	if ($node_set | index($m)) != null then
+		(if $node == null then {value: null, error: "the node journals were not read"}
+		 else {value: $node[$m], error: ($node.errors[$m]? // "the node journals left it empty")} end)
+	elif $observer == null then {value: null, error: ($observer_error // "the observer produced no result")}
 	else {value: $observer[$m], error: ($observer.errors[$m]? // $observer_error // "the observer left it empty")} end;
+def obj($m): if declared($m) and (($node[$m]? | type) == "object") then $node[$m] else empty end;
+def num($m): if declared($m) and (($node[$m]? | type) == "number") then $node[$m] else empty end;
 [
 	(if $mode == "ip-only" then empty
 	 elif $writes == null then
@@ -614,7 +624,31 @@ def observed($m):
 		| (if ($a.missing | length) > 0 then "agents: \($a.missing | join(", ")) not back by the end of the window" else empty end),
 		  (if ($a.new_agent_ids | length) > 0 then "agents: re-enrolled under new ids \($a.new_agent_ids | join(", "))" else empty end),
 		  (if $a.max_reconnect_s > $max_reconnect then "agents: max_reconnect_s=\($a.max_reconnect_s) exceeds \($max_reconnect)s" else empty end)
-	 else empty end)
+	 else empty end),
+	(obj("local_restarts") as $l
+		| if $l.failover_expected then
+			(if $l.failover then empty else "local_restarts: the service did not fail over once the restarts of \($l.resource) on \($l.node) ran out" end)
+		  else
+			(if $l.count == 0 then "local_restarts: \($l.resource) was not restarted on \($l.node)" else empty end),
+			(if $l.count > $l.limit then "local_restarts: \($l.count) starts of \($l.resource) on \($l.node) exceed the limit of \($l.limit)" else empty end),
+			(if $l.failover then "local_restarts: the service failed over instead of restarting on \($l.node)" else empty end)
+		  end),
+	(num("failover_count") | select(. > 0) | "failover_count: the service changed node \(.) times"),
+	(obj("fencing_outcome") | select(.started_elsewhere_before_fence)
+		| "fencing_outcome: the service started on another node before \(.holder) was fenced"),
+	(obj("primary_count")
+		| (if .count != 1 then "primary_count: \(.count) primaries after the repair" else empty end),
+		  (if .two_primaries > 0 then "primary_count: \(.two_primaries) two_primaries events" else empty end)),
+	(obj("former_primary_rebuild")
+		| (if .rebuilt then empty else "former_primary_rebuild: \(.node) was not rebuilt as a standby during the repetition" end),
+		  (if .primary_started_before_rebuild then "former_primary_rebuild: \(.node) ran as a primary again before it was rebuilt" else empty end)),
+	(obj("loss_window") | select(.conduct == "block" and .opened)
+		| "loss_window: the loss window opened (\(.reasons | join(", "))) although sync_standby is block"),
+	(obj("crash_confirmed")
+		| (if (.crashed | length) == 0 then "crash_confirmed: no node crashed" else empty end),
+		  (if (.started_before_crash | length) > 0 then "crash_confirmed: \(.started_before_crash | join(", ")) started the service before crashing" else empty end)),
+	(num("nodes_written") | select(. >= 2) | "nodes_written: \(.) nodes wrote at the same time"),
+	(num("divergence") | select(. > 0) | "divergence: \(.) commits of the former primary past the fork, at least one after the promotion, thrown away by its rebuild")
 ]
 JQEOF
 	jq -nc \
@@ -624,9 +658,261 @@ JQEOF
 		--argjson writes_error "$4" \
 		--argjson observer "$5" \
 		--argjson observer_error "$6" \
-		--argjson wired "$WIRED_MEASURES" \
+		--argjson node "$7" \
+		--argjson node_set "$NODE_MEASURES" \
+		--argjson wired "$(wired_measures "$2")" \
 		--argjson max_reconnect "$AGENTS_RECONNECT_MAX_S" \
 		-f "$TMP/measure-reasons.jq"
+}
+
+# Prints, as a JSON array, the measures the bench takes in a mode.
+wired_measures() {
+	case "$1" in
+	ip-only | postgres/streaming) jq -nc --argjson p "$PROBE_MEASURES" --argjson n "$NODE_MEASURES" '$p + $n' ;;
+	*) printf '%s\n' "$PROBE_MEASURES" ;;
+	esac
+}
+
+# Writes, as one JSON object keyed by cluster node, the lines the node scripts logged between two
+# epochs, with the boot ids around the repetition and, for a node that rebooted, its boot time.
+node_events() {
+	ne_out=$1
+	ne_since=$2
+	ne_until=$3
+	ne_tags=""
+	for ne_tag in $NODE_EVENT_TAGS; do
+		ne_tags="$ne_tags -t $ne_tag"
+	done
+	printf '{}' >"$ne_out"
+	for ne_host in $(group_hosts opensvc_cluster); do
+		ne_before=$(awk -v h="$ne_host" '$1 == h { print $2 }' "$4" | tr -d -)
+		ne_after=$(awk -v h="$ne_host" '$1 == h { print $2 }' "$5" | tr -d -)
+		ne_readable=true
+		ssh_to "$ne_host" "sudo -n journalctl --quiet --no-pager -o json --output-fields=MESSAGE,SYSLOG_IDENTIFIER,_BOOT_ID$ne_tags --since @$ne_since --until @$ne_until" >"$TMP/node-journal.json" 2>/dev/null || ne_readable=false
+		ne_btime=""
+		ne_previous=false
+		if [ -n "$ne_before" ] && [ -n "$ne_after" ] && [ "$ne_before" != "$ne_after" ]; then
+			ne_boot=$(ssh_to "$ne_host" "awk '/^btime/ { print \$2 }' /proc/stat; sudo -n journalctl --quiet --no-pager -b $ne_before -n 1 -o cat >/dev/null 2>&1 && echo previous" 2>/dev/null) || ne_boot=""
+			ne_btime=$(printf '%s\n' "$ne_boot" | sed -n 1p)
+			[ "$(printf '%s\n' "$ne_boot" | sed -n 2p)" = previous ] && ne_previous=true
+		fi
+		if [ "$ne_readable" = true ]; then
+			jq -sc 'map(select(.MESSAGE | type == "string")
+				| {ts: (.__REALTIME_TIMESTAMP | tonumber), tag: .SYSLOG_IDENTIFIER, boot: ._BOOT_ID, msg: .MESSAGE})' \
+				"$TMP/node-journal.json" >"$TMP/node-journal-events.json" 2>/dev/null || ne_readable=false
+		fi
+		[ "$ne_readable" = true ] || printf '[]' >"$TMP/node-journal-events.json"
+		jq -c --arg h "$ne_host" --argjson readable "$ne_readable" --arg before "$ne_before" --arg after "$ne_after" \
+			--arg btime "$ne_btime" --argjson previous "$ne_previous" --slurpfile events "$TMP/node-journal-events.json" \
+			'.[$h] = {readable: $readable, boot_before: $before, boot_after: $after,
+				btime_us: (($btime | tonumber?) // null | if . == null then null else . * 1000000 end), previous_boot_readable: $previous, events: $events[0]}' \
+			"$ne_out" >"$ne_out.tmp" && mv "$ne_out.tmp" "$ne_out"
+	done
+}
+
+# Prints the measures one repetition takes from the node journals, with an errors map, or null when the scenario declares none.
+#   node_measures <declared> <mode> <holder at t0> <t0> <end> <status after repair> <local_restart> <boot ids before> <boot ids after>
+node_measures() {
+	nm_declared=$(jq -nc --argjson d "$1" --argjson w "$(wired_measures "$2")" --argjson n "$NODE_MEASURES" \
+		'[$d[] | select(. as $m | ($w | index($m)) != null and ($n | index($m)) != null)]')
+	if [ "$nm_declared" = "[]" ]; then
+		printf 'null'
+		return 0
+	fi
+	nm_mode=$2
+	nm_holder=$3
+	nm_events="$TMP/node-events.json"
+	node_events "$nm_events" "$(($(date -u -d "$4" +%s) - 1))" "$(($(date -u -d "$5" +%s) + 1))" "$8" "$9"
+	nm_t0=$(date -u -d "$4" +%s%6N)
+	nm_end=$(date -u -d "$5" +%s%6N)
+	nm_post=$(jq -c '.' "$6" 2>/dev/null) || nm_post=""
+	[ -n "$nm_post" ] || nm_post=null
+	nm_restart=$7
+	nm_settings=$(cat "$RUN_SETTINGS_FILE" 2>/dev/null) || nm_settings=""
+	[ -n "$nm_settings" ] || nm_settings=null
+
+	cat >"$TMP/node-measures.jq" <<'JQEOF'
+def us_s: ((. / 1000) | round) / 1000;
+def iso_us: capture("^(?<s>[0-9-]+T[0-9:]+)(\\.(?<f>[0-9]+))?Z$")
+	| ((.s + "Z") | fromdateiso8601) * 1000000 + (((.f // "") + "000000")[0:6] | tonumber);
+def parsed: (.msg | [scan("([a-z_]+)=(\"[^\"]*\"|[^ ]+)")]
+		| map({key: .[0], value: (.[1] | ltrimstr("\"") | rtrimstr("\""))}) | from_entries) as $kv
+	| {node, ts, tag, boot, event: $kv.event, kv: $kv};
+def svc($e): .tag == "maintenant-svc" and .event == $e;
+def pg($e): .tag == "maintenant-pg" and .event == $e;
+def fence($e): .tag == "maintenant-fence" and .event == $e;
+def takes_service: svc("started") or pg("promoting") or pg("promoted") or pg("primary_started");
+
+$nodes_file[0] as $nodes
+| ($nodes | to_entries | map(select(.value.readable | not) | .key)) as $unreadable
+| ($nodes | to_entries | map(select(.value.boot_before == "" or .value.boot_after == "") | .key)) as $unbooted
+| ($nodes | to_entries | map(select(.value.boot_before != "" and .value.boot_after != ""
+	and .value.boot_before != .value.boot_after) | .key)) as $crashed
+| ([$nodes | to_entries[] | .key as $n | .value.events[] | . + {node: $n} | parsed
+	| select(.ts >= $t0 and .ts <= $end)] | sort_by(.ts)) as $ev
+| (if ($unreadable | length) > 0 then "the journal of \($unreadable | join(", ")) could not be read" else null end) as $journal_error
+| (if ($unbooted | length) > 0 then "the boot id of \($unbooted | join(", ")) could not be read" else null end) as $boot_error
+
+| def local_restarts:
+	if $restart == null then {error: "the scenario names no local_restart to check"}
+	else ($restart.resource // "app") as $res
+	| ($settings.local_restarts[$res]? // null) as $limit
+	| ($restart.failover // false) as $expected
+	| if ($expected | not) and $limit == null then {error: "the restart limit of \($res) could not be read from the settings"}
+	  else {value: {
+		resource: $res, node: $holder, limit: $limit, failover_expected: $expected,
+		count: ([$ev[] | select(.node == $holder)
+			| select(if $res == "postgres" then pg("primary_started") or pg("primary_start_failed")
+				else svc("started") or svc("start_failed") end)] | length),
+		failover: any($ev[]; .node != $holder and (svc("started") or pg("promoted")))
+	  }} end
+	end;
+
+def failover_count:
+	{value: (reduce ($ev[] | select(svc("started") or svc("start_failed"))) as $s ({at: $holder, n: 0};
+		if $s.node != .at then {at: $s.node, n: (.n + 1)} else . end) | .n)};
+
+def detection_delay_s:
+	([$ev[] | select(.node == $holder and svc("check_dead"))] | first) as $d
+	| if $d == null then {error: "no check_dead logged on \($holder) during the repetition"}
+	  else {value: (($d.ts - $t0) | us_s)} end;
+
+def fencing_outcome:
+	([$ev[] | select(.node != $holder and takes_service)] | first) as $s
+	| {value: {
+		holder: $holder,
+		fenced: ([$ev[] | select(fence("fenced")) | .kv.target] | unique),
+		failed: ([$ev[] | select(fence("fence_failed")) | .kv.target] | unique),
+		started_elsewhere: ($s != null),
+		started_elsewhere_before_fence: ($s != null
+			and ([$ev[] | select(fence("fenced") and .kv.target == $holder and .ts <= $s.ts)] | length) == 0)
+	}};
+
+def primary_count:
+	if $post == null then {error: "the status after the repair could not be read"}
+	else ([$post.nodes[] | select(.postgres.role? == "primary") | .name]) as $p
+	| {value: {count: ($p | length), nodes: $p, two_primaries: ([$ev[] | select(pg("two_primaries"))] | length)}}
+	end;
+
+def former_primary_rebuild:
+	if $post == null then {error: "the status after the repair could not be read"}
+	else ([$post.nodes[] | select(.postgres.role? == "standby") | .name]) as $sb
+	| if ($sb | length) != 1 then {error: "\($sb | length) standbys after the repair, expected 1"}
+	  else $sb[0] as $n
+	  | ($nodes[$n].boot_before // "") as $boot0
+	  | if $boot0 == "" then {error: "the boot id of \($n) could not be read"}
+	    else [$ev[] | select(.node == $n and .tag == "maintenant-pg")] as $ne
+	    | ([$ne[] | select(.event == "rebuilt")] | last) as $done
+	    | ([$ne[] | select(.event == "primary_stopped" or .event == "fenced")] | first) as $lost
+	    | ([$ne[] | select(.event == "rebuild_started" and ($done == null or .ts <= $done.ts))] | first) as $began
+	    | {value: {
+		node: $n,
+		rebuilt: ($done != null),
+		method: $done.kv.method,
+		duration_s: (if $done == null or $began == null then null else (($done.ts - $began.ts) | us_s) end),
+		primary_started_before_rebuild: any($ne[];
+			(.event == "primary_started" or .event == "primary_confirmed" or .event == "promoted")
+			and ($done == null or .ts < $done.ts)
+			and (.boot != $boot0 or ($lost != null and .ts > $lost.ts)))
+	    }} end
+	  end
+	end;
+
+def sync_standby:
+	if ($settings.sync_standby? // null) == null then {error: "settings.sync_standby could not be read"}
+	else {value: $settings.sync_standby} end;
+
+def loss_window:
+	([$ev[] | select(pg("sync_dropped"))]) as $open
+	| ($open | first) as $o
+	| (if $o == null then null else ([$ev[] | select(pg("sync_restored") and .ts >= $o.ts)] | first) end) as $c
+	| {value: {
+		conduct: ($settings.sync_standby? // null),
+		opened: ($o != null),
+		closed: ($c != null),
+		duration_s: (if $c == null then null else (($c.ts - $o.ts) | us_s) end),
+		reasons: ([$open[].kv.reason] | unique)
+	}};
+
+def crash_confirmed:
+	if $boot_error != null then {error: $boot_error}
+	elif ([$crashed[] | select($nodes[.].previous_boot_readable | not)] | length) > 0 then
+		{error: "the journal of \([$crashed[] | select($nodes[.].previous_boot_readable | not)] | join(", ")) from before the crash is gone"}
+	else {value: {
+		crashed: $crashed,
+		started_before_crash: ([$crashed[] as $n | $ev[] | select(.node == $n and .boot == $nodes[$n].boot_before and takes_service) | $n] | unique),
+		confirmed: (($crashed | length) > 0
+			and ([$crashed[] as $n | $ev[] | select(.node == $n and .boot == $nodes[$n].boot_before and takes_service)] | length) == 0)
+	}} end;
+
+def app_overlap:
+	if $boot_error != null then {error: $boot_error}
+	elif ([$crashed[] | select($nodes[.].btime_us == null)] | length) > 0 then
+		{error: "the boot time of \([$crashed[] | select($nodes[.].btime_us == null)] | join(", ")) could not be read"}
+	else
+		([$ev[] | select(svc("started")) | {ts, node, up: true}]
+		 + [$ev[] | select(svc("stopped") or svc("start_failed")) | {ts, node, up: false}]
+		 + [$ev[] | select(fence("fenced")) | {ts, node: .kv.target, up: false}]
+		 + [$crashed[] | {ts: $nodes[.].btime_us, node: ., up: false}])
+		| sort_by(.ts)
+		| {value: (reduce .[] as $e ({run: {($holder): true}, max: 1};
+			.run[$e.node] = $e.up | .max = ([.max, ([.run[] | select(.)] | length)] | max)) | .max)}
+	end;
+
+def forks:
+	[$ev[] | select(pg("promoted")) as $p
+		| ([$ev[] | select(.node == $p.node and pg("promoting") and .ts <= $p.ts)] | last // $p) as $began
+		| ($nodes | keys[] | select(. != $p.node)) as $f
+		| {promoted: $p.node, at: $began.ts, former: $f,
+		   report: ([$ev[] | select(.node == $f and pg("post_fork_commits") and .ts > $p.ts)] | first)}];
+
+def after_promotion:
+	forks as $forks
+	| ([$forks[] | select(.report == null) | "\(.former) logged no post_fork_commits after the promotion of \(.promoted)"]
+	   + [$forks[] | select(.report != null and (.report.kv.count | tonumber? // null) == null)
+		| "the WAL of \(.former) past the fork could not be read"]) as $missing
+	| if ($missing | length) > 0 then {error: ($missing | join("; "))}
+	  else {value: ([$forks[] | (.report.kv.count | tonumber) as $count | .report.kv.last_commit as $last
+		| if $count > 0 and $last != "none" and ($last | iso_us) > .at then $count else 0 end] | add // 0)}
+	  end;
+
+def nodes_written:
+	if $mode == "ip-only" then app_overlap
+	else after_promotion | if .value == null then . else {value: (if .value > 0 then 2 else 1 end)} end
+	end;
+
+def measure($m):
+	if $mode == "ip-only" and ($postgres_set | index($m)) != null then {value: "not_applicable"}
+	elif $m == "sync_standby" then sync_standby
+	elif $m == "primary_count" then primary_count
+	elif $journal_error != null then {error: $journal_error}
+	elif $m == "local_restarts" then local_restarts
+	elif $m == "failover_count" then failover_count
+	elif $m == "detection_delay_s" then detection_delay_s
+	elif $m == "fencing_outcome" then fencing_outcome
+	elif $m == "former_primary_rebuild" then former_primary_rebuild
+	elif $m == "loss_window" then loss_window
+	elif $m == "crash_confirmed" then crash_confirmed
+	elif $m == "nodes_written" then nodes_written
+	elif $m == "divergence" then after_promotion
+	else {error: "the bench has no rule for \($m)"} end;
+
+[$declared[] as $m | measure($m) | {m: $m} + .] as $results
+| ([$results[] | {key: .m, value: (.value // null)}] | from_entries)
+  + {errors: ([$results[] | select(.error != null) | {key: .m, value: .error}] | from_entries)}
+JQEOF
+	jq -nc \
+		--argjson declared "$nm_declared" \
+		--arg mode "$nm_mode" \
+		--slurpfile nodes_file "$nm_events" \
+		--arg holder "$nm_holder" \
+		--argjson t0 "$nm_t0" \
+		--argjson end "$nm_end" \
+		--argjson post "$nm_post" \
+		--argjson restart "$nm_restart" \
+		--argjson settings "$nm_settings" \
+		--argjson postgres_set "$POSTGRES_MEASURES" \
+		-f "$TMP/node-measures.jq"
 }
 
 # Aggregates one scenario's repetitions into its measures and verdict.
@@ -640,13 +926,16 @@ build_scenario_summary() {
 
 	printf '%s' "$runs_json" | jq \
 		--argjson id "$id" --arg name "$scenario_name" --argjson repetitions "$repetitions" \
-		--argjson declared "$declared" --arg mode "$summary_mode" --argjson wired "$WIRED_MEASURES" '
+		--argjson declared "$declared" --arg mode "$summary_mode" --argjson wired "$(wired_measures "$summary_mode")" \
+		--argjson node_set "$NODE_MEASURES" --argjson postgres_set "$POSTGRES_MEASURES" '
 		def med: sort as $s | ($s | length) as $n |
 			if $n == 0 then null
 			elif ($n % 2) == 1 then $s[($n - 1) / 2]
 			else ($s[$n / 2 - 1] + $s[$n / 2]) / 2
 			end;
 		def sum(f): map(f) | add;
+		def node($m): map(.node_measures[$m]? // empty | select(type != "string"));
+		def none_if_empty(f): if length > 0 then f else null end;
 		(map(select(.rto_ms != null) | .rto_ms)) as $rtos |
 		(map(.writes? // empty)) as $writes |
 		(map(.observer.telemetry_gap_s? // empty)) as $gaps |
@@ -654,6 +943,52 @@ build_scenario_summary() {
 		(map(.observer.alerts_induced? // empty)) as $alerts |
 		(map(.observer.agents? // empty)) as $agents |
 		[$declared[] | select(. as $m | $wired | index($m) | not)] as $not_measured |
+		[$declared[] | select(. as $m | $mode == "ip-only" and ($postgres_set | index($m)) != null)] as $not_applicable |
+		{
+			local_restarts: (node("local_restarts") | none_if_empty({
+				repetitions: length,
+				resource: .[0].resource,
+				limit: .[0].limit,
+				count_min: (map(.count) | min),
+				count_max: (map(.count) | max),
+				failovers: (map(select(.failover)) | length),
+				failover_expected: .[0].failover_expected
+			})),
+			failover_count: (node("failover_count") | none_if_empty(max)),
+			detection_delay_s: (node("detection_delay_s") | none_if_empty(max)),
+			fencing_outcome: (node("fencing_outcome") | none_if_empty({
+				repetitions: length,
+				fenced: (map(.fenced[]) | unique),
+				failed: (map(.failed[]) | unique),
+				started_elsewhere_before_fence: (map(select(.started_elsewhere_before_fence)) | length)
+			})),
+			primary_count: (node("primary_count") | none_if_empty({
+				min: (map(.count) | min),
+				max: (map(.count) | max),
+				two_primaries: sum(.two_primaries)
+			})),
+			former_primary_rebuild: (node("former_primary_rebuild") | none_if_empty({
+				repetitions: length,
+				rebuilt: (map(select(.rebuilt)) | length),
+				methods: (map(.method // empty) | unique),
+				max_duration_s: (map(.duration_s // empty) | max),
+				primary_started_before_rebuild: (map(select(.primary_started_before_rebuild)) | length)
+			})),
+			sync_standby: (map(.node_measures.sync_standby? // empty) | none_if_empty(.[0])),
+			loss_window: (node("loss_window") | none_if_empty({
+				repetitions: length,
+				opened: (map(select(.opened)) | length),
+				max_duration_s: (map(.duration_s // empty) | max)
+			})),
+			crash_confirmed: (node("crash_confirmed") | none_if_empty({
+				repetitions: length,
+				confirmed: (map(select(.confirmed)) | length),
+				crashed: (map(.crashed[]) | unique),
+				started_before_crash: (map(.started_before_crash[]) | unique)
+			})),
+			nodes_written: (node("nodes_written") | none_if_empty(max)),
+			divergence: (node("divergence") | none_if_empty(add))
+		} as $node_summary |
 		{
 			id: $id,
 			name: $name,
@@ -693,7 +1028,9 @@ build_scenario_summary() {
 					max_reconnect_s: ($agents | map(.max_reconnect_s) | max),
 					new_agent_ids: ($agents | map(.new_agent_ids[]) | unique)
 				} else null end)
-			} + ([$not_measured[] | {key: ., value: "not_measured"}] | from_entries)),
+			} + ($node_summary | with_entries(select(.key as $k | ($declared | index($k)) != null and ($wired | index($k)) != null)))
+			  + ([$not_measured[] | {key: ., value: "not_measured"}] | from_entries)
+			  + ([$not_applicable[] | {key: ., value: "not_applicable"}] | from_entries)),
 			runs: .
 		}'
 }
@@ -781,6 +1118,9 @@ run_all_scenario() {
 			fi
 		fi
 
+		holder_t0=$start_holder
+		[ -n "$holder_t0" ] || holder_t0=$(jq -r '.service.holders[0] // empty' "$TMP/status-pre-$number.json")
+
 		server_log_cursors "$TMP/server-log-cursors-$number-$rep"
 		cluster_boot_ids >"$TMP/boot-before-$number-$rep"
 		t0=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
@@ -834,6 +1174,7 @@ $ver_out"
 		case "$holders" in '' | *[!0-9]*) holders=-1 ;; esac
 		cluster_boot_ids >"$TMP/boot-after-$number-$rep"
 		faulted=$(faulted_nodes "$TMP/boot-before-$number-$rep" "$TMP/boot-after-$number-$rep")
+		t_end=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
 
 		t1_window=$(date -u -d "$t1 +10 seconds" +%Y-%m-%dT%H:%M:%S.%NZ)
 		agents_to=$(date -u -d "$t1 +$AGENTS_RECONNECT_MAX_S seconds" +%Y-%m-%dT%H:%M:%S.%NZ)
@@ -912,6 +1253,11 @@ $ver_out"
 		server_log_findings "$TMP/server-log-cursors-$number-$rep" "$log_until" >"$TMP/server-log-$number-$rep.txt"
 		server_log_json=$(jq -Rsc 'split("\n") | map(select(length > 0))' "$TMP/server-log-$number-$rep.txt")
 
+		node_measures_json=$(node_measures "$declared" "$mode" "$holder_t0" "$t0" "$t_end" \
+			"$TMP/status-post-$number.json" "$(jq -c '.local_restart // null' "$TMP/scenario-def-$number.json")" \
+			"$TMP/boot-before-$number-$rep" "$TMP/boot-after-$number-$rep") || node_measures_json=""
+		[ -n "$node_measures_json" ] || node_measures_json=null
+
 		reasons_file="$TMP/reasons-$number-$rep.json"
 		printf '[]' >"$reasons_file"
 		add_reason() {
@@ -926,7 +1272,7 @@ $ver_out"
 		if [ -s "$TMP/server-log-$number-$rep.txt" ]; then
 			add_reason "inconclusive: the server logged a failed '$SERVER_LOG_INCONCLUSIVE' or its journal could not be read during the measurement window"
 		fi
-		if measure_reasons "$declared" "$mode" "$writes_json" "$writes_error" "$observer_json" "$observer_error" >"$TMP/measure-reasons-$number-$rep.json" &&
+		if measure_reasons "$declared" "$mode" "$writes_json" "$writes_error" "$observer_json" "$observer_error" "$node_measures_json" >"$TMP/measure-reasons-$number-$rep.json" &&
 			jq -r '.[]' "$TMP/measure-reasons-$number-$rep.json" >"$TMP/measure-reasons-$number-$rep.txt"; then
 			while IFS= read -r measure_reason; do
 				add_reason "$measure_reason"
@@ -959,7 +1305,7 @@ $ver_out"
 		printf '%s %-30s rep %s/%s %s %s\n' "$padded" "$slug" "$rep" "$repetitions" "$rep_verdict" "$rto_display"
 
 		one=$(jq -nc \
-			--argjson rep "$rep" --arg t0 "$t0" --arg t1 "$t1" \
+			--argjson rep "$rep" --arg t0 "$t0" --arg t1 "$t1" --arg t_end "$t_end" --arg holder_t0 "$holder_t0" \
 			--argjson injection_rc "$injection_rc" \
 			--argjson verify_ok "$([ "$verify_ok" -eq 1 ] && echo true || echo false)" \
 			--argjson repair_rc "$repair_rc" \
@@ -973,16 +1319,19 @@ $ver_out"
 			--argjson writes_error "$writes_error" \
 			--arg faulted "$faulted" \
 			--argjson server_log "$server_log_json" \
+			--argjson node_measures "$node_measures_json" \
 			--argjson reasons "$(cat "$reasons_file")" \
 			--arg verdict "$rep_verdict" \
 			'{
-				repetition: $rep, t0: $t0, t1: $t1,
+				repetition: $rep, t0: $t0, t1: $t1, t_end: $t_end,
+				holder_t0: (if $holder_t0 == "" then null else $holder_t0 end),
 				injection_rc: $injection_rc, verify_ok: $verify_ok, repair_rc: $repair_rc,
 				holders: $holders,
 				rto_ms: (if $rto_ms_raw == "" then null else ($rto_ms_raw | tonumber) end),
 				availability: $availability, availability_error: $availability_error,
 				observer: $observer, observer_error: $observer_error,
 				writes: $writes, writes_error: $writes_error,
+				node_measures: $node_measures,
 				faulted_hosts: ($faulted | split(",") | map(select(length > 0))),
 				server_log: $server_log,
 				verdict: $verdict, reasons: $reasons
@@ -1054,6 +1403,8 @@ cmd_run_all() {
 
 	info "run-all $run_id starting, mode=$mode"
 
+	run_all_settings >"$RUN_SETTINGS_FILE"
+
 	scenarios_ndjson="$TMP/scenarios.ndjson"
 	: >"$scenarios_ndjson"
 
@@ -1072,7 +1423,7 @@ cmd_run_all() {
 
 	scenarios_json=$(jq -s '.' "$scenarios_ndjson")
 	versions_json=$(run_all_versions)
-	settings_json=$(run_all_settings)
+	settings_json=$(cat "$RUN_SETTINGS_FILE")
 	mode_json_val=$(mode_json "$mode")
 
 	run_json=$(jq -n \
@@ -1419,6 +1770,24 @@ def cell($s; $m; f):
 	elif ($s.measures[$m] | type) == "string" then ($s.measures[$m] | gsub("_"; " "))
 	elif $s.measures[$m] == null then (if (($s.measures_declared // []) | index($m)) != null then "no result" else "-" end)
 	else ($s.measures[$m] | f) end;
+def list_s: if length == 0 then "none" else join(", ") end;
+def node_cell($m):
+	if $m == "local_restarts" then
+		"\(.resource) \(if .count_min == .count_max then .count_min else "\(.count_min)-\(.count_max)" end) of limit \(or_na(.limit)), "
+		+ "failover in \(.failovers)/\(.repetitions) (expected: \(if .failover_expected then "yes" else "no" end))"
+	elif $m == "failover_count" or $m == "nodes_written" or $m == "divergence" then tostring
+	elif $m == "detection_delay_s" then "\(.)s"
+	elif $m == "fencing_outcome" then
+		"fenced \(.fenced | list_s), failed \(.failed | list_s), started elsewhere before the fence \(.started_elsewhere_before_fence)/\(.repetitions)"
+	elif $m == "primary_count" then
+		"\(if .min == .max then .min else "\(.min)-\(.max)" end), two_primaries \(.two_primaries)"
+	elif $m == "former_primary_rebuild" then
+		"rebuilt \(.rebuilt)/\(.repetitions) by \(.methods | list_s), max \(or_na(.max_duration_s))s, primary before rebuild \(.primary_started_before_rebuild)/\(.repetitions)"
+	elif $m == "loss_window" then
+		"opened \(.opened)/\(.repetitions)" + (if .max_duration_s == null then "" else ", max \(.max_duration_s)s" end)
+	elif $m == "crash_confirmed" then
+		"confirmed \(.confirmed)/\(.repetitions), crashed \(.crashed | list_s), started before crash \(.started_before_crash | list_s)"
+	else tostring end;
 
 . as $r
 | (if $r.mode.backend == null then $r.mode.replication else ($r.mode.backend + "/" + $r.mode.replication) end) as $mode_label
@@ -1470,6 +1839,13 @@ def cell($s; $m; f):
         + (if ((.not_measured // []) | length) > 0 then (.not_measured | join(", ")) else "-" end)
         + " |"
       ]
+    + ( [$r.scenarios[] | select(.measures != null)
+          | . as $s | [$node_set[] | select(. as $m | ($s.measures_declared // []) | index($m))] as $ms
+          | select(($ms | length) > 0)
+          | "| \(.id) | \(.name) | " + ([$ms[] as $m | "\($m): " + cell($s; $m; node_cell($m))] | join("; ")) + " |"] as $rows
+        | if ($rows | length) > 0 then
+            ["", "## Cluster measures", "", "| # | Scenario | Measures |", "|---|---|---|"] + $rows
+          else [] end )
     + ( [$r.scenarios[] | select(.verdict == "not_applicable")] as $na
         | if ($na | length) > 0 then
             ["", "## Not applicable", ""] + [$na[] | "- \(.id) \(.name): \(.reason // "no reason given")"]
@@ -1494,7 +1870,7 @@ def cell($s; $m; f):
   )
 | .[]
 JQEOF
-	jq -r -f "$TMP/render.jq" "$run_json_file"
+	jq -r --argjson node_set "$NODE_MEASURES" -f "$TMP/render.jq" "$run_json_file"
 }
 
 cmd_report() {

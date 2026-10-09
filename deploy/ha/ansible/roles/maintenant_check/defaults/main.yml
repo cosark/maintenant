@@ -12,3 +12,6 @@ maintenant_start_script: /usr/local/sbin/maintenant-start
 maintenant_stop_script: /usr/local/sbin/maintenant-stop
 maintenant_start_timeout_seconds: 60
 maintenant_start_term_wait_seconds: 5
+
+# lab/lab reads the start, stop and check lines under this tag.
+maintenant_check_log_identifier: maintenant-svc

@@ -22,6 +22,12 @@ authoritative for intent.
   passed, and its number is never reused.
 - **Measures** lists the figures that decide the verdict. Every run collects the full
   measurement set anyway (see `contracts/run-report.md`); the column names what matters here.
+  The measures about the nodes come from the lines their scripts write to the journal: the
+  application's start, stop and dead check under the tag `maintenant-svc`, the fencing callout
+  under `maintenant-fence`, the PostgreSQL scripts under `maintenant-pg`.
+- A scenario that tests a bounded local restart names it with `local_restart`: `resource` is
+  `app` or `postgres`, and `failover` says whether the service is expected to move once the
+  restarts run out (scenario 18) or to stay on the injected node (scenarios 7 and 10).
 
 Two probes run continuously on the measurement machine between `lab up` and `lab down`: the
 availability probe (one request on the service address every 100 ms) and the write generator
@@ -175,7 +181,7 @@ This is the failure mode most HA setups miss. It is one of the three that decide
 | **Injection** | Partition of the interconnect **and** the arbitrator made unreachable. Played in two variants: unreachable from one side, then unreachable from both. |
 | **Repair** | Restore the interconnect and the arbitrator, then run the post-mortem check before anything else. |
 | **Expected, all modes** | With the arbitrator reachable from one side only: that side keeps or takes the service, and the isolated side crashes without having started anything (`split_action`). With the arbitrator unreachable from both sides: both crash. That is a total outage, and it is the correct outcome — an outage is recoverable, a divergence is not. |
-| **Post-mortem** | Verify the crashed node wrote nothing, by comparing the state of both volumes after repair. `nodes_written == 2` fails the run outright, whatever else happened (SC-004). |
+| **Post-mortem** | Verify the crashed node wrote nothing. In `postgres/streaming`, its WAL past the fork, read before its rebuild, holds no commit dated after the promotion; in `ip-only`, the application never ran on both nodes at once; in the DRBD modes, the state of both volumes is compared after repair. `nodes_written == 2` fails the run outright, whatever else happened (SC-004). |
 | **Measures** | `nodes_written`, `writes`, divergence check, crash confirmation on the isolated side. |
 
 This is the scenario that proves the design is safe, not merely that it works.
@@ -210,7 +216,10 @@ service carries the primary role through `app#pg`, whose start trigger promotes 
 The scripts on each node log every role change to `/var/lib/maintenant-pg/events.log` and to
 the journal (tag `maintenant-pg`): `promoted`, `fenced`, `rebuild_started`, `rebuilt`,
 `start_refused`, `standby_absent`, `sync_dropped`, `sync_restored`, `retention_exceeded`. The
-scenarios read that log; `maintenant-pg-state` prints the role of a node as JSON.
+scenarios read that log; `maintenant-pg-state` prints the role of a node as JSON. Before it
+rewinds or copies anything, a rebuild reads its own WAL past the point where the new primary's
+timeline forked, and logs `post_fork_commits` with the count and the dates of the commits it
+finds there, or `count=unknown` when that WAL cannot be read.
 
 A promotion always switches the new primary to asynchronous replication before it leaves
 recovery, and logs `sync_dropped loss_window=open reason=promotion`, whatever

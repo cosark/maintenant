@@ -62,6 +62,9 @@ modes:
 variants:
 - arbitrator unreachable from one side
 - arbitrator unreachable from both sides
-post_mortem: Verify the crashed node wrote nothing, by comparing the state of both volumes
-  after repair. nodes_written == 2 fails the run outright, whatever else happened (SC-004).
+post_mortem: 'Verify the crashed node wrote nothing. In postgres/streaming, its WAL past the
+  fork, read before its rebuild, holds no commit dated after the promotion; in ip-only, the
+  application never ran on both nodes at once; in the DRBD modes, the state of both volumes
+  is compared after repair. nodes_written == 2 fails the run outright, whatever else happened
+  (SC-004).'
 note: This is the scenario that proves the design is safe, not merely that it works.

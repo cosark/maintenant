@@ -61,10 +61,11 @@ fi
 
 if shoot; then
 	rm -f "$failed_dir/failed-$target"
+	logger -t maintenant-fence -- "event=fenced target=$target"
 else
 	status=$?
 	mkdir -p "$failed_dir"
 	date -u +%Y-%m-%dT%H:%M:%SZ >"$failed_dir/failed-$target"
-	logger -t maintenant-fence -- "fencing $target failed: the service will not start on this node until $failed_dir/failed-$target is removed"
+	logger -t maintenant-fence -- "event=fence_failed target=$target mark=$failed_dir/failed-$target"
 	exit "$status"
 fi

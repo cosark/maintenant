@@ -15,4 +15,8 @@ done
 pkill -KILL -u "$user" -x "$name"
 sleep 0.1
 
-! pgrep -u "$user" -x "$name" >/dev/null
+if pgrep -u "$user" -x "$name" >/dev/null; then
+	logger -t {{ maintenant_check_log_identifier }} -- "event=stop_failed"
+	exit 1
+fi
+logger -t {{ maintenant_check_log_identifier }} -- "event=stopped"

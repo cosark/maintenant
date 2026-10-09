@@ -3,6 +3,10 @@
 
 set -u
 
+log() {
+	logger -t {{ maintenant_check_log_identifier }} -- "event=$*"
+}
+
 {{ maintenant_stop_script }}
 
 /usr/bin/systemd-cat --identifier={{ opensvc_service_log_identifier }} {{ maintenant_bin }} </dev/null >/dev/null 2>&1 &
@@ -12,15 +16,20 @@ deadline=$(($(date +%s) + {{ maintenant_start_timeout_seconds }}))
 while [ "$(date +%s)" -lt "$deadline" ]; do
 	if ! kill -0 "$pid" 2>/dev/null; then
 		echo "{{ maintenant_bin | basename }} exited before answering" >&2
+		log "start_failed reason=exited"
 		exit 1
 	fi
-	{{ maintenant_check_script }} >/dev/null 2>&1
+	{{ maintenant_check_script }} --quiet >/dev/null 2>&1
 	case $? in
-	0 | 1) exit 0 ;;
+	0 | 1)
+		log started
+		exit 0
+		;;
 	esac
 	sleep 1
 done
 
 echo "{{ maintenant_bin | basename }} did not answer within {{ maintenant_start_timeout_seconds }} s" >&2
 {{ maintenant_stop_script }}
+log "start_failed reason=timeout"
 exit 1

@@ -23,6 +23,9 @@ measures:
 - rto_ms
 - alerts_induced
 - local_restarts
+local_restart:
+  resource: app
+  failover: false
 modes:
   ip-only:
     applicable: true

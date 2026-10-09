@@ -18,6 +18,38 @@ elif [ $# -gt 0 ]; then
 	exit 2
 fi
 
+post_fork_commits() {
+	segment=""
+	for wal in "$PG_DATADIR"/pg_wal/[0-9A-F]???????????????????????; do
+		[ -f "$wal" ] && segment=${wal##*/}
+	done
+	[ -n "$segment" ] || return 1
+	tli=$(printf '%s' "$segment" | cut -c1-8)
+	peer_wal=$(peer_sql 'select pg_walfile_name(pg_current_wal_lsn())') || return 1
+	peer_tli=$(printf '%s' "$peer_wal" | cut -c1-8)
+	if [ "$peer_tli" = "$tli" ]; then
+		echo "count=0 first_commit=none last_commit=none timeline=$tli"
+		return 0
+	fi
+	history=$(peer_sql "select convert_from(pg_read_binary_file('pg_wal/$peer_tli.history'), 'UTF8')") || return 1
+	fork=$(printf '%s\n' "$history" | awk -v t="$((0x$tli))" '$1 == t { print $2 }')
+	[ -n "$fork" ] || return 1
+	# pg_waldump fails at the end of the WAL whatever happens: only a read error counts.
+	dump=$(as_postgres env TZ=UTC "$PG_BINDIR/pg_waldump" --path="$PG_DATADIR/pg_wal" \
+		--timeline="$((0x$tli))" --start="$fork" --rmgr=Transaction 2>"$HA_RUN_DIR/waldump.err") ||
+		grep -q -e 'error in WAL record at' -e 'could not find a valid record after' "$HA_RUN_DIR/waldump.err" ||
+		return 1
+	commits=$(printf '%s\n' "$dump" | sed -n 's/.*desc: COMMIT \([0-9-]*\) \([0-9:.]*\) UTC.*/\1T\2Z/p')
+	count=$(printf '%s' "$commits" | grep -c . || true)
+	first=none
+	last=none
+	if [ "$count" -gt 0 ]; then
+		first=$(printf '%s\n' "$commits" | head -n 1)
+		last=$(printf '%s\n' "$commits" | tail -n 1)
+	fi
+	echo "count=$count first_commit=$first last_commit=$last timeline=$tli fork_lsn=$fork"
+}
+
 mkdir -p "$HA_RUN_DIR"
 exec 9>"$HA_RUN_DIR/rebuild.lock"
 if ! flock -n 9; then
@@ -36,6 +68,9 @@ fi
 if local_running; then
 	stop_local
 fi
+
+fork_report=$(post_fork_commits) || fork_report="count=unknown"
+log_event "post_fork_commits $fork_report"
 
 slot=$(own_slot_on_peer)
 if [ "$full" = no ] && [ "$slot" != ok ]; then

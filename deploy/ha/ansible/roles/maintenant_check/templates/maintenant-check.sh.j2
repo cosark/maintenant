@@ -7,14 +7,26 @@
 #
 # /api/v1/health answers 200 whatever the state of the storage, so the body is
 # what decides. It also carries runtime.connected: only storage.connected counts.
+#
+# A dead result is logged under {{ maintenant_check_log_identifier }}, unless --quiet is given.
 
 set -u
 
 url="{{ maintenant_check_url }}"
 deadline={{ maintenant_check_timeout_seconds }}
 
-body=$(curl -fsS -m "$deadline" "$url" 2>/dev/null) || exit 2
-connected=$(printf '%s' "$body" | jq -r 'if .storage.connected == null then "absent" else .storage.connected end' 2>/dev/null) || exit 2
+quiet=no
+if [ "${1:-}" = --quiet ]; then
+	quiet=yes
+fi
+
+dead() {
+	[ "$quiet" = yes ] || logger -t {{ maintenant_check_log_identifier }} -- "event=check_dead reason=$1"
+	exit 2
+}
+
+body=$(curl -fsS -m "$deadline" "$url" 2>/dev/null) || dead no_answer
+connected=$(printf '%s' "$body" | jq -r 'if .storage.connected == null then "absent" else .storage.connected end' 2>/dev/null) || dead unreadable_body
 
 case "$connected" in
 true) exit 0 ;;
@@ -24,6 +36,6 @@ false)
 	;;
 *)
 	echo "health body carries no storage.connected" >&2
-	exit 2
+	dead no_storage_connected
 	;;
 esac
