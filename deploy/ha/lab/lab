@@ -61,6 +61,7 @@ AGENTS_RECONNECT_MAX_S=90
 PROBE_MEASURES='["rto_ms", "writes", "telemetry_gap_s", "telemetry_samples_lost", "alerts_induced", "agents"]'
 NODE_MEASURES='["local_restarts", "failover_count", "detection_delay_s", "fencing_outcome", "primary_count", "former_primary_rebuild", "sync_standby", "loss_window", "crash_confirmed", "nodes_written", "divergence"]'
 POSTGRES_MEASURES='["primary_count", "former_primary_rebuild", "sync_standby", "loss_window", "divergence"]'
+SHARED_DATA_MEASURES='["writes", "telemetry_gap_s", "telemetry_samples_lost", "alerts_induced", "agents"]'
 # Must match maintenant_check_log_identifier, the fencing callout and log_event of postgres_ha.
 NODE_EVENT_TAGS="maintenant-svc maintenant-fence maintenant-pg"
 
@@ -596,7 +597,7 @@ probe_json() {
 # Prints the reasons, as a JSON array, the wired measures of one repetition fail it for.
 measure_reasons() {
 	cat >"$TMP/measure-reasons.jq" <<'JQEOF'
-def declared($m): $declared | index($m) != null;
+def declared($m): $declared | index($m) != null and ($not_applicable | index($m)) == null;
 def trimmed: tostring | sub("\\s+$"; "");
 def observed($m):
 	if ($node_set | index($m)) != null then
@@ -607,7 +608,7 @@ def observed($m):
 def obj($m): if declared($m) and (($node[$m]? | type) == "object") then $node[$m] else empty end;
 def num($m): if declared($m) and (($node[$m]? | type) == "number") then $node[$m] else empty end;
 [
-	(if $mode == "ip-only" then empty
+	(if ($not_applicable | index("writes")) != null then empty
 	 elif $writes == null then
 		(if declared("writes") then "writes: not measured (\(($writes_error // "the writes probe produced no result") | trimmed))" else empty end)
 	 elif $writes.lost > 0 then
@@ -661,8 +662,17 @@ JQEOF
 		--argjson node "$7" \
 		--argjson node_set "$NODE_MEASURES" \
 		--argjson wired "$(wired_measures "$2")" \
+		--argjson not_applicable "$(not_applicable_measures "$2")" \
 		--argjson max_reconnect "$AGENTS_RECONNECT_MAX_S" \
 		-f "$TMP/measure-reasons.jq"
+}
+
+# Prints, as a JSON array, the measures that have no object in a mode.
+not_applicable_measures() {
+	case "$1" in
+	ip-only) jq -nc --argjson s "$SHARED_DATA_MEASURES" --argjson p "$POSTGRES_MEASURES" '$s + $p' ;;
+	*) printf '[]\n' ;;
+	esac
 }
 
 # Prints, as a JSON array, the measures the bench takes in a mode.
@@ -927,7 +937,7 @@ build_scenario_summary() {
 	printf '%s' "$runs_json" | jq \
 		--argjson id "$id" --arg name "$scenario_name" --argjson repetitions "$repetitions" \
 		--argjson declared "$declared" --arg mode "$summary_mode" --argjson wired "$(wired_measures "$summary_mode")" \
-		--argjson node_set "$NODE_MEASURES" --argjson postgres_set "$POSTGRES_MEASURES" '
+		--argjson node_set "$NODE_MEASURES" --argjson not_applicable_set "$(not_applicable_measures "$summary_mode")" '
 		def med: sort as $s | ($s | length) as $n |
 			if $n == 0 then null
 			elif ($n % 2) == 1 then $s[($n - 1) / 2]
@@ -943,7 +953,7 @@ build_scenario_summary() {
 		(map(.observer.alerts_induced? // empty)) as $alerts |
 		(map(.observer.agents? // empty)) as $agents |
 		[$declared[] | select(. as $m | $wired | index($m) | not)] as $not_measured |
-		[$declared[] | select(. as $m | $mode == "ip-only" and ($postgres_set | index($m)) != null)] as $not_applicable |
+		([$declared[] | select(. as $m | $not_applicable_set | index($m) != null)] + ($not_applicable_set - $node_set) | unique) as $not_applicable |
 		{
 			local_restarts: (node("local_restarts") | none_if_empty({
 				repetitions: length,
@@ -999,7 +1009,7 @@ build_scenario_summary() {
 			not_measured: $not_measured,
 			measures: ({
 				rto_ms: (if ($rtos | length) > 0 then {min: ($rtos | min), p50: ($rtos | med), max: ($rtos | max)} else null end),
-				writes: (if $mode == "ip-only" then "not_applicable"
+				writes: (if ($not_applicable_set | index("writes")) != null then "not_applicable"
 					elif ($writes | length) > 0 then {
 						repetitions: ($writes | length),
 						ack: ($writes | sum(.ack)),
@@ -1303,6 +1313,7 @@ $ver_out"
 			rto_display="rto=n/a"
 		fi
 		printf '%s %-30s rep %s/%s %s %s\n' "$padded" "$slug" "$rep" "$repetitions" "$rep_verdict" "$rto_display"
+		jq -r '.[] | "    - " + .' "$reasons_file"
 
 		one=$(jq -nc \
 			--argjson rep "$rep" --arg t0 "$t0" --arg t1 "$t1" --arg t_end "$t_end" --arg holder_t0 "$holder_t0" \
