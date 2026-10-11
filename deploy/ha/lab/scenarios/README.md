@@ -24,7 +24,10 @@ authoritative for intent.
   measurement set anyway (see `contracts/run-report.md`); the column names what matters here.
   The measures about the nodes come from the lines their scripts write to the journal: the
   application's start, stop and dead check under the tag `maintenant-svc`, the fencing callout
-  under `maintenant-fence`, the PostgreSQL scripts under `maintenant-pg`.
+  under `maintenant-fence`, the PostgreSQL scripts under `maintenant-pg`, and the watchdog
+  kills and restarts of the cluster agent under `systemd`. Declaring `fencing_outcome` means
+  the injected node must be fenced: the measure fails when it is not, and when the service
+  starts elsewhere before that fencing.
 - A scenario that tests a bounded local restart names it with `local_restart`: `resource` is
   `app` or `postgres`, and `failover` says whether the service is expected to move once the
   restarts run out (scenario 18) or to stay on the injected node (scenarios 7 and 10).
@@ -55,6 +58,7 @@ is fixed here so that later phases cannot collide:
 | 20 | SQLite journal recovery after crash | `sqlite/drbd` |
 | 21 | Volume resynchronisation when the node returns | `sqlite/drbd` |
 | 22 | Storage split-brain and its manual resolution | `sqlite/drbd` |
+| 23 | Freeze of the active node | all |
 
 One provisional name used while planning, `11-degraded-network`, is dropped: number 11 is the
 plan's degraded WAN scenario, which already covers it. The two others, `13-degraded-storage`
@@ -101,8 +105,10 @@ This is the scenario the whole bench exists for. It is played with repetitions, 
 |---|---|
 | **Injection** | `kill -STOP` on the OpenSVC agent of the active node. The daemon stops answering but the node, the application and the replicated volume are all still alive. |
 | **Repair** | `kill -CONT` on the agent, or, when the node was fenced, restart it and let it rejoin. |
-| **Expected, all modes** | Heartbeat expiry detects the freeze. Detection alone is not recovery: a frozen daemon does not kill itself, and the survivor cannot take the data while the peer still holds it. **The frozen node is fenced before anything starts anywhere else.** If the fencing fails, nothing starts elsewhere and the operator is alerted — a failed fencing blocks, it never lets through (FR-024). |
-| **Measures** | `rto_ms`, `nodes_written`, `alerts_induced`, fencing outcome. |
+| **Expected, all modes** | `opensvc-server.service` runs with `WatchdogSec=5s` and `Restart=on-failure`. The frozen daemon stops answering the watchdog, so systemd kills it within those 5 s and restarts it, long before the heartbeat expires. The peer sees a daemon restart, not a node loss. The service stays on the same node, with its address, its application and its data: no failover, no fencing, and no acknowledged write is lost (in `ip-only`, data is local to each node, so writes are not compared). |
+| **Measures** | `rto_ms`, `nodes_written`, `alerts_induced`, `failover_count` (expected: zero), `agent_watchdog_restart` (expected: at least one restart of the agent on the injected node after a watchdog timeout). |
+
+The freeze the heartbeat does detect, a whole node that stops without crashing, is scenario 23.
 
 ### 5. Inter-site partition
 
@@ -205,6 +211,21 @@ Their numbers, names and scope are fixed here.
 | 20 | SQLite journal recovery after crash | `sqlite/drbd` | The journal left behind by an abrupt loss is recovered on the surviving node before the application is allowed to start. |
 | 21 | Volume resynchronisation on node return | `sqlite/drbd` | The returning node resynchronises from the survivor without overwriting an acknowledged write, and does not restart the service on its own. |
 | 22 | Storage split-brain and its manual resolution | `sqlite/drbd` | Automatic resolution is forbidden: it throws writes away. The bench must show the refusal to promote, name the side to keep, and document the manual procedure. |
+| 23 | Freeze of the active node | all | The whole node stops without crashing. The survivor must fence it before starting anything (FR-024). |
+
+---
+
+## Scenarios for all modes
+
+### 23. Freeze of the active node
+
+| | |
+|---|---|
+| **Injection** | `virsh suspend site-a` from the host: the whole active node stops, its daemon, its application and its data with it, without crashing and without any shutdown. |
+| **Repair** | A fenced node is shut off: start it. A node still paused, because nobody fenced it, is destroyed and started, never resumed: resumed after a takeover, it would come back still holding the address, the application and, in `postgres/streaming`, a primary, next to the survivor's. Once it is destroyed it is down for certain, so the repair also removes the survivor's failed-fencing mark, as the operator would. The node then rejoins as in scenario 2: no automatic giveback, and in `postgres/streaming` it is rebuilt as a standby. |
+| **Expected, all modes** | Heartbeat expiry detects the freeze. A frozen node neither answers nor dies, so the survivor cannot take the service while the node still holds it. **The frozen node is fenced before anything starts anywhere else**, then the service starts on the survivor. If the fencing fails, nothing starts elsewhere and the operator is alerted: a failed fencing blocks, it never lets through (FR-024). The outage is about the heartbeat timeout, plus the fencing, plus the start; no acknowledged write is lost. |
+| **Expected, `postgres/streaming`** | `app#pg` promotes the standby only after the fencing, in asynchronous replication as in scenario 2. The returning node is rebuilt as a standby, never restarted as a primary. |
+| **Measures** | `rto_ms`, `writes`, `nodes_written`, `alerts_induced`, `fencing_outcome` (fails when the injected node was not fenced, or when the service started elsewhere before its fencing), `primary_count`, `former_primary_rebuild`. |
 
 ---
 
@@ -279,12 +300,12 @@ checked down to the rebuild of the former primary and the end of the loss window
 | **Expected** | The giveback is refused while the preferred node is not a caught-up standby, streaming, synchronous and zero bytes behind. Once it is, the service goes back, the other node is rebuilt as its standby, and no acknowledged write is lost. |
 | **Measures** | `rto_ms`, `writes`, `primary_count`, `former_primary_rebuild`. |
 
-## Runs that cannot conclude
+## Server log
 
-`lab run-all` fails a repetition as inconclusive when a node's journal holds a line with
-`insert ping` from the server between the start of the injection and the end of the measurement
-window, or cannot be read. Lines whose error is `context canceled` or `context deadline exceeded`
-are ignored: the client abandoned the request, so the server never answered it 200. The server
-answers a heartbeat ping with 200 even when it failed to write the ping's history row, so a
-run where that happened cannot conclude on its writes. The binary's output reaches the
-journal under the tag `maintenant`, through `systemd-cat` in the service templates.
+`lab run-all` keeps in `runs[].server_log` the lines with `insert ping` the server logged
+between the start of the injection and the end of the measurement window, and the nodes whose
+journal could not be read. Lines whose error is `context canceled` or `context deadline exceeded`
+are left out: the client abandoned the request. These lines are information and do not decide
+the verdict. A ping the server answers 200 without storing it comes back without a ping id, and
+the writes probe counts it in `writes.unrecorded` and in `writes.lost`. The binary's output
+reaches the journal under the tag `maintenant`, through `systemd-cat` in the service templates.

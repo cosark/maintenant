@@ -59,11 +59,11 @@ RUN_ALL_VERIFY_INTERVAL=2
 RUN_ALL_ABORTED=0
 AGENTS_RECONNECT_MAX_S=90
 PROBE_MEASURES='["rto_ms", "writes", "telemetry_gap_s", "telemetry_samples_lost", "alerts_induced", "agents"]'
-NODE_MEASURES='["local_restarts", "failover_count", "detection_delay_s", "fencing_outcome", "primary_count", "former_primary_rebuild", "sync_standby", "loss_window", "crash_confirmed", "nodes_written", "divergence"]'
+NODE_MEASURES='["local_restarts", "failover_count", "detection_delay_s", "fencing_outcome", "agent_watchdog_restart", "primary_count", "former_primary_rebuild", "sync_standby", "loss_window", "crash_confirmed", "nodes_written", "divergence"]'
 POSTGRES_MEASURES='["primary_count", "former_primary_rebuild", "sync_standby", "loss_window", "divergence"]'
 SHARED_DATA_MEASURES='["writes", "telemetry_gap_s", "telemetry_samples_lost", "alerts_induced", "agents"]'
-# Must match maintenant_check_log_identifier, the fencing callout and log_event of postgres_ha.
-NODE_EVENT_TAGS="maintenant-svc maintenant-fence maintenant-pg"
+# Must match maintenant_check_log_identifier, the fencing callout and log_event of postgres_ha; systemd logs the watchdog kills.
+NODE_EVENT_TAGS="maintenant-svc maintenant-fence maintenant-pg systemd"
 
 # The bench logs in as an ordinary account: every om command, and every
 # scenario command, is run through sudo on the machine it acts on.
@@ -78,9 +78,8 @@ GIVEBACK_LAG_TRIES=10
 
 # Must match opensvc_service_log_identifier: the tag systemd-cat gives the binary's output.
 SERVER_LOG_IDENTIFIER="maintenant"
-# The ping is answered 200 even when its history row was not written, so a run where this was
-# logged cannot conclude on its writes, unless the client had abandoned the request.
-SERVER_LOG_INCONCLUSIVE="insert ping"
+# Kept in run.json as information: the writes probe already counts an ack the server did not store.
+SERVER_LOG_WATCH="insert ping"
 
 # virsh reads qemu:///session for a non-root user, where the bench has nothing.
 LIBVIRT_DEFAULT_URI="${LIBVIRT_DEFAULT_URI:-qemu:///system}"
@@ -565,7 +564,7 @@ server_log_findings() {
 			continue
 		fi
 		# journalctl 252 drops the first match after the cursor when -t is also given.
-		printf '%s\n' "$journal" | grep -F " ${SERVER_LOG_IDENTIFIER}[" | grep -F "$SERVER_LOG_INCONCLUSIVE" | grep -vF -e 'context canceled' -e 'context deadline exceeded' | sed "s/^/$host: /" || true
+		printf '%s\n' "$journal" | grep -F " ${SERVER_LOG_IDENTIFIER}[" | grep -F "$SERVER_LOG_WATCH" | grep -vF -e 'context canceled' -e 'context deadline exceeded' | sed "s/^/$host: /" || true
 	done
 }
 
@@ -635,8 +634,12 @@ def num($m): if declared($m) and (($node[$m]? | type) == "number") then $node[$m
 			(if $l.failover then "local_restarts: the service failed over instead of restarting on \($l.node)" else empty end)
 		  end),
 	(num("failover_count") | select(. > 0) | "failover_count: the service changed node \(.) times"),
-	(obj("fencing_outcome") | select(.started_elsewhere_before_fence)
-		| "fencing_outcome: the service started on another node before \(.holder) was fenced"),
+	(obj("fencing_outcome") as $f
+		| (if ($f.fenced | index($f.holder)) == null
+			then "fencing_outcome: \($f.holder) was not fenced\(if ($f.failed | index($f.holder)) != null then ", its fencing failed" else "" end)"
+			else empty end),
+		  (if $f.started_elsewhere_before_fence then "fencing_outcome: the service started on another node before \($f.holder) was fenced" else empty end)),
+	(num("agent_watchdog_restart") | select(. == 0) | "agent_watchdog_restart: systemd did not restart the cluster agent of the injected node after a watchdog timeout"),
 	(obj("primary_count")
 		| (if .count != 1 then "primary_count: \(.count) primaries after the repair" else empty end),
 		  (if .two_primaries > 0 then "primary_count: \(.two_primaries) two_primaries events" else empty end)),
@@ -747,7 +750,7 @@ def iso_us: capture("^(?<s>[0-9-]+T[0-9:]+)(\\.(?<f>[0-9]+))?Z$")
 	| ((.s + "Z") | fromdateiso8601) * 1000000 + (((.f // "") + "000000")[0:6] | tonumber);
 def parsed: (.msg | [scan("([a-z_]+)=(\"[^\"]*\"|[^ ]+)")]
 		| map({key: .[0], value: (.[1] | ltrimstr("\"") | rtrimstr("\""))}) | from_entries) as $kv
-	| {node, ts, tag, boot, event: $kv.event, kv: $kv};
+	| {node, ts, tag, boot, msg, event: $kv.event, kv: $kv};
 def svc($e): .tag == "maintenant-svc" and .event == $e;
 def pg($e): .tag == "maintenant-pg" and .event == $e;
 def fence($e): .tag == "maintenant-fence" and .event == $e;
@@ -797,6 +800,12 @@ def fencing_outcome:
 		started_elsewhere_before_fence: ($s != null
 			and ([$ev[] | select(fence("fenced") and .kv.target == $holder and .ts <= $s.ts)] | length) == 0)
 	}};
+
+def agent_watchdog_restart:
+	[$ev[] | select(.node == $holder and .tag == "systemd")] as $sd
+	| ([$sd[] | select(.msg | startswith("opensvc-server.service: Watchdog timeout"))] | first) as $w
+	| {value: (if $w == null then 0
+		else [$sd[] | select(.ts >= $w.ts and (.msg | startswith("opensvc-server.service: Scheduled restart job")))] | length end)};
 
 def primary_count:
 	if $post == null then {error: "the status after the repair could not be read"}
@@ -900,6 +909,7 @@ def measure($m):
 	elif $m == "failover_count" then failover_count
 	elif $m == "detection_delay_s" then detection_delay_s
 	elif $m == "fencing_outcome" then fencing_outcome
+	elif $m == "agent_watchdog_restart" then agent_watchdog_restart
 	elif $m == "former_primary_rebuild" then former_primary_rebuild
 	elif $m == "loss_window" then loss_window
 	elif $m == "crash_confirmed" then crash_confirmed
@@ -970,8 +980,10 @@ build_scenario_summary() {
 				repetitions: length,
 				fenced: (map(.fenced[]) | unique),
 				failed: (map(.failed[]) | unique),
+				holder_fenced: (map(select(.holder as $h | .fenced | index($h) != null)) | length),
 				started_elsewhere_before_fence: (map(select(.started_elsewhere_before_fence)) | length)
 			})),
+			agent_watchdog_restart: (node("agent_watchdog_restart") | none_if_empty(min)),
 			primary_count: (node("primary_count") | none_if_empty({
 				min: (map(.count) | min),
 				max: (map(.count) | max),
@@ -1279,9 +1291,6 @@ $ver_out"
 		[ "$repair_rc" -eq 0 ] || add_reason "repair failed (rc=$repair_rc)"
 		[ "$green_after" -eq 1 ] || add_reason "bench did not return to green after repair"
 		[ "$holders" -eq 1 ] || add_reason "holders after recovery = $holders, expected 1"
-		if [ -s "$TMP/server-log-$number-$rep.txt" ]; then
-			add_reason "inconclusive: the server logged a failed '$SERVER_LOG_INCONCLUSIVE' or its journal could not be read during the measurement window"
-		fi
 		if measure_reasons "$declared" "$mode" "$writes_json" "$writes_error" "$observer_json" "$observer_error" "$node_measures_json" >"$TMP/measure-reasons-$number-$rep.json" &&
 			jq -r '.[]' "$TMP/measure-reasons-$number-$rep.json" >"$TMP/measure-reasons-$number-$rep.txt"; then
 			while IFS= read -r measure_reason; do
@@ -1786,10 +1795,10 @@ def node_cell($m):
 	if $m == "local_restarts" then
 		"\(.resource) \(if .count_min == .count_max then .count_min else "\(.count_min)-\(.count_max)" end) of limit \(or_na(.limit)), "
 		+ "failover in \(.failovers)/\(.repetitions) (expected: \(if .failover_expected then "yes" else "no" end))"
-	elif $m == "failover_count" or $m == "nodes_written" or $m == "divergence" then tostring
+	elif $m == "failover_count" or $m == "agent_watchdog_restart" or $m == "nodes_written" or $m == "divergence" then tostring
 	elif $m == "detection_delay_s" then "\(.)s"
 	elif $m == "fencing_outcome" then
-		"fenced \(.fenced | list_s), failed \(.failed | list_s), started elsewhere before the fence \(.started_elsewhere_before_fence)/\(.repetitions)"
+		"fenced \(.fenced | list_s) (injected node in \(.holder_fenced // "n/a")/\(.repetitions)), failed \(.failed | list_s), started elsewhere before the fence \(.started_elsewhere_before_fence)/\(.repetitions)"
 	elif $m == "primary_count" then
 		"\(if .min == .max then .min else "\(.min)-\(.max)" end), two_primaries \(.two_primaries)"
 	elif $m == "former_primary_rebuild" then

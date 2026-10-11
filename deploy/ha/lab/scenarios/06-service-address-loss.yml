@@ -9,7 +9,7 @@ id: 6
 slug: service-address-loss
 name: Loss of the service address
 source: bench plan
-repetitions: 1
+repetitions: 10
 injection:
   'on': active
   command: ip addr del "$LAB_SERVICE_ADDRESS/$LAB_SERVICE_NETMASK" dev "$LAB_INTERCONNECT"

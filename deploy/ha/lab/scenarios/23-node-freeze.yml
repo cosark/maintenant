@@ -1,0 +1,74 @@
+---
+# Scenario 23, valid in every mode. Numbers 1 to 12 belong to the bench plan;
+# the allocation of the others is fixed in README.md.
+id: 23
+slug: node-freeze
+name: Freeze of the active node
+source: all modes
+repetitions: 1
+injection:
+  'on': host
+  command: virsh suspend "$LAB_ACTIVE_DOMAIN"
+repair:
+  'on': host
+  command: |
+    set -eu
+    if ! LC_ALL=C virsh domstate "$LAB_ACTIVE_DOMAIN" | grep -q "shut off"; then
+      virsh destroy "$LAB_ACTIVE_DOMAIN" || LC_ALL=C virsh domstate "$LAB_ACTIVE_DOMAIN" | grep -q "shut off"
+      $LAB_SSH_PASSIVE "sudo -n rm -f /var/lib/maintenant-fence/failed-$LAB_ACTIVE"
+    fi
+    virsh start "$LAB_ACTIVE_DOMAIN"
+verify:
+  'on': measurement
+  command: curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
+measures:
+- rto_ms
+- writes
+- nodes_written
+- alerts_induced
+- fencing_outcome
+- primary_count
+- former_primary_rebuild
+modes:
+  ip-only:
+    applicable: true
+    max_rto_s: 60
+    expected: 'The whole node is frozen, without a crash: its daemon, its application and its
+      service address stop at once and nothing restarts them. Heartbeat expiry detects the
+      freeze. The survivor fences the frozen node before anything starts anywhere else, then
+      takes the service address and starts the application. If the fencing fails, nothing
+      starts elsewhere and the operator is alerted: a failed fencing blocks, it never lets
+      through (FR-024). The outage is about the heartbeat timeout, plus the fencing, plus the
+      start. Data is local to each node in this mode, so writes are not compared.'
+  postgres/streaming:
+    applicable: true
+    max_rto_s: 60
+    expected: 'The whole node is frozen, without a crash: its daemon, its primary and its
+      application stop at once and nothing restarts them. Heartbeat expiry detects the freeze.
+      The survivor fences the frozen node before anything starts anywhere else; only then does
+      app#pg promote the standby, in asynchronous replication as in scenario 2, and app#0 starts
+      after it. If the fencing fails, nothing is promoted and nothing starts elsewhere, and the
+      operator is alerted: a failed fencing blocks, it never lets through (FR-024). The outage is
+      about the heartbeat timeout, plus the fencing, plus the promotion and the start.
+      writes.lost == 0. When the fenced node boots again it is rebuilt as a standby of the
+      survivor, never restarted as a primary, and the service stays on the survivor.'
+  sqlite/drbd:
+    applicable: true
+    expected: 'The whole node is frozen, without a crash: its daemon, its application and its
+      volume stop at once and nothing restarts them. Heartbeat expiry detects the freeze. The
+      survivor fences the frozen node before anything starts anywhere else, then promotes the
+      volume, mounts it and starts the application. If the fencing fails, nothing starts
+      elsewhere and the operator is alerted: a failed fencing blocks, it never lets through
+      (FR-024). The outage is about the heartbeat timeout, plus the fencing, plus the start.
+      writes.lost == 0.'
+  postgres/drbd:
+    applicable: true
+    expected: 'The whole node is frozen, without a crash: its daemon, its database and its
+      volume stop at once and nothing restarts them. Heartbeat expiry detects the freeze. The
+      survivor fences the frozen node before anything starts anywhere else, then promotes the
+      volume and starts the database and the application. If the fencing fails, nothing starts
+      elsewhere and the operator is alerted: a failed fencing blocks, it never lets through
+      (FR-024). The outage is about the heartbeat timeout, plus the fencing, plus the start.
+      writes.lost == 0.'
+note: The case scenario 4 was first written for. A frozen node does not answer and does not
+  die, so only the fencing makes it safe to start the service elsewhere.

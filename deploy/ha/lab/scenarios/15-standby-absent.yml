@@ -12,6 +12,7 @@ injection:
 repair:
   'on': passive
   command: systemctl start maintenant-pg-watch.service
+settle_s: 30
 verify:
   'on': host
   command: |
