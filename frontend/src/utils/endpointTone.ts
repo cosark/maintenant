@@ -18,6 +18,8 @@ export function endpointTone(ep: Endpoint): ChipTone {
 }
 
 /** Badge text and tooltip for a stale endpoint, by why its status is not live. */
-export function endpointStaleBadge(_ep: Endpoint): { text: string; title: string } {
-  throw new Error('not implemented')
+export function endpointStaleBadge(ep: Endpoint): { text: string; title: string } {
+  return ep.agent_offline
+    ? { text: 'offline', title: `Agent offline · last known: ${ep.status}` }
+    : { text: 'stale', title: `Not checked recently · last known: ${ep.status}` }
 }
