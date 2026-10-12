@@ -16,3 +16,8 @@ export function endpointTone(ep: Endpoint): ChipTone {
   if (ep.stale) return 'unknown'
   return statusTones[ep.status] ?? 'neutral'
 }
+
+/** Badge text and tooltip for a stale endpoint, by why its status is not live. */
+export function endpointStaleBadge(_ep: Endpoint): { text: string; title: string } {
+  throw new Error('not implemented')
+}
