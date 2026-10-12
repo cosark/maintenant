@@ -1425,7 +1425,7 @@ cmd_run_all() {
 
 	run_all_settings >"$RUN_SETTINGS_FILE"
 
-	scenarios_ndjson="$TMP/scenarios.ndjson"
+	scenarios_ndjson="$report_dir/scenarios.ndjson"
 	: >"$scenarios_ndjson"
 
 	for file in "$LAB_DIR"/scenarios/[0-9][0-9]-*.yml; do
@@ -1441,7 +1441,6 @@ cmd_run_all() {
 		fi
 	done
 
-	scenarios_json=$(jq -s '.' "$scenarios_ndjson")
 	versions_json=$(run_all_versions)
 	settings_json=$(cat "$RUN_SETTINGS_FILE")
 	mode_json_val=$(mode_json "$mode")
@@ -1451,7 +1450,7 @@ cmd_run_all() {
 		--argjson mode "$mode_json_val" \
 		--argjson versions "$versions_json" \
 		--argjson settings "$settings_json" \
-		--argjson scenarios "$scenarios_json" \
+		--slurpfile scenarios "$scenarios_ndjson" \
 		'{
 			run_id: $run_id,
 			mode: $mode,
