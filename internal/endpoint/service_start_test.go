@@ -221,8 +221,9 @@ func TestService_Start_DetectsOutageAfterRestart(t *testing.T) {
 		}, noopLogger())
 		svc = NewService(Deps{Store: store, Engine: engine, Logger: noopLogger(),
 			AlertCallback: func(ep *Endpoint, _ CheckResult) (string, interface{}) {
-				if ep.AlertState == AlertAlerting {
+				if ep.AlertState == AlertNormal && ep.ConsecutiveFailures >= ep.Config.FailureThreshold {
 					alerts.Add(1)
+					return "endpoint.alert", nil
 				}
 				return "", nil
 			}})
