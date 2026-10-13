@@ -516,5 +516,18 @@ jobs:
       - name: Unit tests (vitest)
         run: npx --no-install vitest run
 
+      # Same policy as govulncheck and Trivy: block on high/critical advisories
+      # with a non-breaking fix, report-only for the rest.
       - name: npm audit
-        run: npm audit --audit-level=high
+        run: |
+          npm audit --json > /tmp/npm-audit.json || true
+          jq -r '
+            [.vulnerabilities | to_entries[] | .value
+              | select(.severity == "high" or .severity == "critical")
+              | {name, fixable: (.fixAvailable == true or (.fixAvailable | type == "object" and .isSemVerMajor == false))}] as $v
+            | ($v | map(select(.fixable) | .name)) as $blocking
+            | ($v | map(select(.fixable | not) | .name)) as $reportonly
+            | "high/critical, no non-breaking fix (report-only): \($reportonly)",
+              "high/critical, fixable (blocking): \($blocking)",
+              (if $blocking != [] then "fixable vulnerabilities present" | halt_error(1) else empty end)
+          ' /tmp/npm-audit.json
