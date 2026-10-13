@@ -178,14 +178,16 @@ func TestImageUpdates_UpgradeOnOneHostRemovesOnlyItsEntry(t *testing.T) {
 		seedHostedUpdate(t, us, secondScan, h.agentID, h.externalID, "valkey", "valkey/valkey", "8.0.1", "8.1.3")
 	}
 
-	stale, err := us.ListStaleImageUpdates(ctx, secondScan, []string{"valkey"})
+	// valkey still runs on the NAS (upgraded), so the scan covers all three hosts.
+	covered := []string{uid.LocalAgent, "agent-nas", "agent-web"}
+	stale, err := us.ListStaleImageUpdates(ctx, secondScan, covered, []string{"valkey"})
 	require.NoError(t, err)
 	require.Len(t, stale, 1, "only the upgraded host's entry is stale")
 	assert.Equal(t, "ctr-valkey-nas", stale[0].ContainerID)
 	assert.Equal(t, "valkey", stale[0].ContainerName)
 	assert.Equal(t, "agent-nas", stale[0].AgentID, "the stale entry names its host")
 
-	deleted, err := us.DeleteStaleImageUpdates(ctx, secondScan, []string{"valkey"})
+	deleted, err := us.DeleteStaleImageUpdates(ctx, secondScan, covered, []string{"valkey"})
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), deleted)
 

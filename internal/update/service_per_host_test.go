@@ -27,26 +27,26 @@ func (s *insertRecordingStore) InsertImageUpdate(_ context.Context, u *ImageUpda
 }
 
 // hostPendingStore holds the updates earlier scans left pending, several hosts
-// per container name, and drops them by name like the real store does.
+// per container name, and drops them by host and name like the real store does.
 type hostPendingStore struct {
 	*stubStore
 	pending []StaleImageUpdate
 }
 
-func (s *hostPendingStore) ListStaleImageUpdates(_ context.Context, _ string, names []string) ([]StaleImageUpdate, error) {
+func (s *hostPendingStore) ListStaleImageUpdates(_ context.Context, _ string, agentIDs, names []string) ([]StaleImageUpdate, error) {
 	var stale []StaleImageUpdate
 	for _, su := range s.pending {
-		if slices.Contains(names, su.ContainerName) {
+		if slices.Contains(agentIDs, su.AgentID) && slices.Contains(names, su.ContainerName) {
 			stale = append(stale, su)
 		}
 	}
 	return stale, nil
 }
 
-func (s *hostPendingStore) DeleteStaleImageUpdates(_ context.Context, _ string, names []string) (int64, error) {
+func (s *hostPendingStore) DeleteStaleImageUpdates(_ context.Context, _ string, agentIDs, names []string) (int64, error) {
 	before := len(s.pending)
 	s.pending = slices.DeleteFunc(s.pending, func(su StaleImageUpdate) bool {
-		return slices.Contains(names, su.ContainerName)
+		return slices.Contains(agentIDs, su.AgentID) && slices.Contains(names, su.ContainerName)
 	})
 	return int64(before - len(s.pending)), nil
 }
