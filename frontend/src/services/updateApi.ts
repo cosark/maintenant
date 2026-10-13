@@ -75,6 +75,9 @@ export interface EolTable {
 export interface ContainerUpdateDetail {
   container_id: string
   container_name: string
+  agent_id?: string | null
+  agent_hostname?: string | null
+  agent_label?: string | null
   image: string
   current_tag: string
   current_digest: string
