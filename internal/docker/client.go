@@ -24,11 +24,12 @@ const (
 
 // Client wraps the Docker SDK client with reconnection logic.
 type Client struct {
-	cli       client.APIClient
-	mu        sync.RWMutex
-	host      string
-	logger    *slog.Logger
-	connected bool
+	cli        client.APIClient
+	mu         sync.RWMutex
+	host       string
+	logger     *slog.Logger
+	connected  bool
+	replayFrom time.Time
 
 	proxyLabels bool
 
@@ -85,6 +86,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	}
 	c.mu.Lock()
 	c.connected = true
+	c.replayFrom = time.Now()
 	c.mu.Unlock()
 	c.logger.Info("connected to Docker daemon")
 	return nil
@@ -98,6 +100,7 @@ func (c *Client) TryConnect(ctx context.Context) error {
 	}
 	c.mu.Lock()
 	c.connected = true
+	c.replayFrom = time.Now()
 	c.mu.Unlock()
 	c.logger.Info("connected to Docker daemon")
 	return nil

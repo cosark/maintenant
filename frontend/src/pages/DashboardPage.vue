@@ -87,7 +87,7 @@ const INCIDENT_LABEL: Record<string, [string, string]> = {
   Endpoint: ['endpoint down', 'endpoints down'],
   Container: ['container down', 'containers down'],
   Heartbeat: ['heartbeat missed', 'heartbeats missed'],
-  Certificate: ['certificate expired', 'certificates expired'],
+  Certificate: ['certificate issue', 'certificate issues'],
   Workload: ['workload down', 'workloads down'],
 }
 const WARNING_LABEL: Record<string, [string, string]> = {
