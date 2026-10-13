@@ -29,11 +29,17 @@ type UpdateHandler struct {
 	eolSvc         *eol.Service
 	sessions       AgentSessions
 	staleThreshold time.Duration
+	agentDirectory AgentDirectory
 }
 
 // NewUpdateHandler creates a new update handler.
 func NewUpdateHandler(service *update.Service, store update.UpdateStore, containers ContainerInfoProvider) *UpdateHandler {
 	return &UpdateHandler{service: service, store: store, containers: containers}
+}
+
+// SetAgentDirectory wires agent name resolution so the update views can show each entry's host.
+func (h *UpdateHandler) SetAgentDirectory(ad AgentDirectory) {
+	panic("not implemented")
 }
 
 // SetHostOS wires the host operating system support the updates surface serves.

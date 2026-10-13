@@ -599,6 +599,11 @@ func (a *App) wireUpdateCallback() {
 	})
 }
 
+// agentName returns the label of an agent, else its hostname, else its id.
+func (a *App) agentName(ctx context.Context, agentID string) string {
+	panic("not implemented")
+}
+
 // wirePostureCallbacks wires the security posture scoring callbacks.
 func (a *App) wirePostureCallbacks() {
 	alertCh := a.alertEngine.EventChannel()
