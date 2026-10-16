@@ -3,6 +3,8 @@ resource {{ drbd_resource }} {
 	options {
 		# OpenSVC promotes and demotes; opening the device never does.
 		auto-promote no;
+		quorum majority;
+		on-no-quorum suspend-io;
 	}
 
 	net {
@@ -24,15 +26,20 @@ resource {{ drbd_resource }} {
 		disk {{ drbd_backing_device }};
 		meta-disk internal;
 	}
-{% for node in drbd_nodes %}
+{% for node in drbd_nodes + [drbd_quorum_node] %}
 
 	on {{ hostvars[node].ansible_facts.hostname }} {
 		node-id {{ loop.index0 }};
 		address {{ hostvars[node].ansible_host | default(node) }}:{{ drbd_port }};
+{% if node == drbd_quorum_node %}
+		volume 0 {
+			disk none;
+		}
+{% endif %}
 	}
 {% endfor %}
 
 	connection-mesh {
-		hosts{% for node in drbd_nodes %} {{ hostvars[node].ansible_facts.hostname }}{% endfor %};
+		hosts{% for node in drbd_nodes + [drbd_quorum_node] %} {{ hostvars[node].ansible_facts.hostname }}{% endfor %};
 	}
 }

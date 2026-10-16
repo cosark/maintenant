@@ -9,6 +9,7 @@
   ansible.builtin.assert:
     that: drbd_backing_device | length > 0
     fail_msg: "set ha_drbd_backing_device to the dedicated disk DRBD replicates on {{ inventory_hostname }}"
+  when: not drbd_diskless
 
 - name: Install DRBD 9 from the vendor packages
   ansible.builtin.include_tasks: install.yml

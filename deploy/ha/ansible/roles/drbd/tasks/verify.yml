@@ -5,14 +5,17 @@
   register: drbd_running
   changed_when: false
 
-# FR-018 and FR-023: synchronous replication, flushes on, a single primary, and
-# a split brain that stops replication instead of discarding a side.
+# FR-018 and FR-023: synchronous replication, flushes on, a single primary, a
+# split brain that stops replication instead of discarding a side, and a node
+# without quorum that freezes its writes.
 - name: Refuse settings that could lose an acknowledged write
   ansible.builtin.assert:
     that: drbd_running.stdout is search('(?m)^\s*' ~ (item.split() | join('\s+')) ~ ';')
     fail_msg: "{{ inventory_hostname }} does not run {{ drbd_resource }} with {{ item }}"
   loop:
     - auto-promote no
+    - quorum majority
+    - on-no-quorum suspend-io
     - protocol C
     - allow-two-primaries no
     - after-sb-0pri disconnect
@@ -21,3 +24,18 @@
     - rr-conflict disconnect
     - disk-flushes yes
     - md-flushes yes
+
+- name: Read the quorum this node holds
+  ansible.builtin.command:
+    argv: [drbdsetup, status, --json, "{{ drbd_resource }}"]
+  register: drbd_dstate
+  changed_when: false
+
+- name: Refuse a node that does not count three votes
+  ansible.builtin.assert:
+    that:
+      - (drbd_dstate.stdout | from_json | first).connections | length == 2
+      - (drbd_dstate.stdout | from_json | first).devices | map(attribute='quorum') | list == [true]
+      - drbd_disk_states | sort == ['Diskless', 'UpToDate', 'UpToDate']
+      - drbd_disk_states | first == (drbd_diskless | ternary('Diskless', 'UpToDate'))
+    fail_msg: "{{ inventory_hostname }} does not hold the quorum of {{ drbd_resource }} with the diskless vote of {{ drbd_quorum_node }}"

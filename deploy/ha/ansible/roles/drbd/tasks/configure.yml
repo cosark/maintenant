@@ -21,7 +21,7 @@
 
 - name: Write the metadata on a blank disk
   ansible.builtin.include_tasks: metadata.yml
-  when: drbd_up.rc != 0
+  when: drbd_up.rc != 0 and not drbd_diskless
 
 - name: Apply the configuration to the kernel
   ansible.builtin.command:
@@ -40,18 +40,18 @@
 
 - name: Read the disk states
   ansible.builtin.command:
-    argv: [drbdadm, dstate, "{{ drbd_resource }}"]
+    argv: [drbdsetup, status, --json, "{{ drbd_resource }}"]
   register: drbd_dstate
   changed_when: false
 
-# Both sides Inconsistent only happens on fresh metadata: no write has ever
+# Both disks Inconsistent only happens on fresh metadata: no write has ever
 # been acknowledged, so forcing one side to seed the other loses nothing.
 - name: Seed the first full synchronisation from the initial primary
   ansible.builtin.command:
     argv: [drbdadm, primary, --force, "{{ drbd_resource }}"]
   when:
     - inventory_hostname == drbd_initial_primary
-    - drbd_dstate.stdout | trim == 'Inconsistent/Inconsistent'
+    - drbd_disk_states | reject('equalto', 'Diskless') | unique == ['Inconsistent']
   register: drbd_seeded
   changed_when: true
 
@@ -63,9 +63,9 @@
 
 - name: Wait for both copies to be up to date
   ansible.builtin.command:
-    argv: [drbdadm, dstate, "{{ drbd_resource }}"]
+    argv: [drbdsetup, status, --json, "{{ drbd_resource }}"]
   register: drbd_dstate
   changed_when: false
-  until: drbd_dstate.stdout | trim == 'UpToDate/UpToDate'
+  until: drbd_disk_states | reject('in', ['UpToDate', 'Diskless']) | list | length == 0
   retries: "{{ drbd_sync_retries }}"
   delay: "{{ drbd_sync_delay }}"

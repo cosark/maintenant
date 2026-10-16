@@ -18,7 +18,7 @@ No throwaway script is ever required to deploy.
 | `ansible/roles/maintenant/`         | the static binary, the state root, the settings and, in server mode, the gRPC pair, one table for both the env file and the service |
 | `ansible/roles/maintenant_check/`   | the application test the service runs: 0 alive, 1 degraded, 2 dead                                                                  |
 | `ansible/roles/postgres_ha/`        | `postgres/streaming`: PostgreSQL primary and synchronous standby, promotion, anti-return lock, rebuild of the former primary        |
-| `ansible/roles/drbd/`               | `sqlite/drbd`: DRBD 9 from the LINBIT packages, protocol C, flushes on, a split brain that disconnects and never discards a side   |
+| `ansible/roles/drbd/`               | `sqlite/drbd`: DRBD 9 from the LINBIT packages, protocol C, flushes on, a split brain that disconnects and never discards a side, a diskless quorum vote on the arbitrator that freezes the writes of an isolated node |
 | `ansible/roles/opensvc_service/`    | renders the mode's template, declares the service and waits for it to be up on one node                                             |
 | `ansible/roles/maintenant_agent/`   | an ordinary agent as a systemd unit on each node and on the measurement machine, enrolled with a one-time token                      |
 | `ansible/roles/lab_witness/`        | Docker and the witness container whose resource history counts the samples a failover lost                                           |

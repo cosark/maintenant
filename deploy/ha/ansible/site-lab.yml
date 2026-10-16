@@ -14,6 +14,13 @@
     - opensvc_arbitrator
     - fencing
 
+# The arbitrator carries the third, diskless DRBD vote.
+- name: Replicate the volume
+  hosts: opensvc_cluster:arbitrator
+  roles:
+    - role: drbd
+      when: ha_mode | default('ip-only') == 'sqlite/drbd'
+
 # One play: the service template reads the defaults of the product roles.
 - name: Install the product and declare the service
   hosts: opensvc_cluster
@@ -22,8 +29,6 @@
     - maintenant_check
     - role: postgres_ha
       when: ha_mode | default('ip-only') == 'postgres/streaming'
-    - role: drbd
-      when: ha_mode | default('ip-only') == 'sqlite/drbd'
     - opensvc_service
 
 - name: Run the witness container

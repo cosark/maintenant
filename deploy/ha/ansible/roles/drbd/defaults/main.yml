@@ -20,6 +20,10 @@ drbd_port: 7789
 drbd_backing_device: "{{ ha_drbd_backing_device | default('') }}"
 
 drbd_nodes: "{{ groups['opensvc_cluster'] }}"
+# Diskless third vote on the arbitrator machine: a node cut from both others
+# freezes its writes instead of diverging (checklist RPO 0, point 3).
+drbd_quorum_node: "{{ groups['arbitrator'] | first }}"
+drbd_diskless: "{{ inventory_hostname == drbd_quorum_node }}"
 
 # The node whose blank disk seeds the first full synchronisation: the preferred
 # node of the inventory, or the first cluster host when none is marked.
@@ -28,6 +32,12 @@ drbd_initial_primary: >-
        | selectattr('ha_preferred', 'defined') | selectattr('ha_preferred')
        | map(attribute='inventory_hostname') | list)
       + groups['opensvc_cluster']) | first }}
+
+# This node's disk followed by every peer's, as drbdsetup reports them.
+drbd_disk_states: >-
+  {{ (drbd_dstate.stdout | from_json | first).devices | map(attribute='disk-state') | list
+     + (drbd_dstate.stdout | from_json | first).connections | map(attribute='peer_devices')
+       | flatten | map(attribute='peer-disk-state') | list }}
 
 drbd_connect_retries: 24
 drbd_connect_delay: 5
