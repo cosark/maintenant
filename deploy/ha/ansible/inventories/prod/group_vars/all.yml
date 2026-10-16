@@ -24,3 +24,6 @@ ha_fencing_check_command: ""
 # postgres/streaming: the disk that carries the PostgreSQL data directory.
 # Empty keeps it on the system disk.
 ha_postgres_data_device: ""
+
+# sqlite/drbd: the dedicated disk DRBD replicates. Its content is never kept.
+ha_drbd_backing_device: ""

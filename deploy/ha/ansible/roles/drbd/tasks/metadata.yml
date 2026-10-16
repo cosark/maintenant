@@ -1,0 +1,30 @@
+---
+- name: Look for DRBD metadata on the backing disk
+  ansible.builtin.command:
+    argv: [drbdadm, dump-md, "{{ drbd_resource }}"]
+  register: drbd_md
+  changed_when: false
+  failed_when: drbd_md.rc != 0 and 'No valid meta data found' not in drbd_md.stderr
+
+- name: Read the signatures on the backing disk
+  ansible.builtin.command:
+    argv: [blkid, -o, value, -s, TYPE, "{{ drbd_backing_device }}"]
+  register: drbd_backing_type
+  changed_when: false
+  failed_when: drbd_backing_type.rc not in [0, 2]
+  when: drbd_md.rc != 0
+
+- name: Refuse to write metadata over a disk that holds something else
+  ansible.builtin.assert:
+    that: drbd_backing_type.stdout | trim | length == 0
+    fail_msg: >-
+      {{ drbd_backing_device }} on {{ inventory_hostname }} carries a
+      {{ drbd_backing_type.stdout | trim }} signature and no DRBD metadata; wipe
+      it by hand if its content is not needed.
+  when: drbd_md.rc != 0
+
+- name: Write the DRBD metadata
+  ansible.builtin.command:
+    argv: [drbdadm, create-md, "{{ drbd_resource }}"]
+  when: drbd_md.rc != 0
+  changed_when: true

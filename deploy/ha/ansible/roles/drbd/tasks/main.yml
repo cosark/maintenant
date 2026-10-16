@@ -1,0 +1,20 @@
+---
+- name: Refuse a cluster that is not a pair of nodes
+  ansible.builtin.assert:
+    that: drbd_nodes | length == 2
+    fail_msg: "sqlite/drbd replicates between exactly two nodes, the inventory declares {{ drbd_nodes | length }}"
+  run_once: true
+
+- name: Refuse a node without a disk to replicate
+  ansible.builtin.assert:
+    that: drbd_backing_device | length > 0
+    fail_msg: "set ha_drbd_backing_device to the dedicated disk DRBD replicates on {{ inventory_hostname }}"
+
+- name: Install DRBD 9 from the vendor packages
+  ansible.builtin.include_tasks: install.yml
+
+- name: Declare the replicated volume and bring it up
+  ansible.builtin.include_tasks: configure.yml
+
+- name: Check what the kernel actually runs
+  ansible.builtin.include_tasks: verify.yml

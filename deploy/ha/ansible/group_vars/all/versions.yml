@@ -31,6 +31,10 @@ opensvc_apt_branch: "prod"
 # DRBD 9, from the vendor packages. Protocol C, after-sb-* set to disconnect,
 # no automatic resolution that throws writes away (FR-018, FR-023).
 drbd_version: "9.2"
+# LINBIT's public proxmox-8 suite, built on bookworm: the vendor publishes no
+# DRBD 9 for Debian 12 elsewhere without a customer account.
+drbd_dkms_package_version: "9.2.20-1"
+drbd_utils_package_version: "9.35.0-1"
 
 # PostgreSQL, from PGDG. 14 is the product floor; the bench pins one major and
 # keeps it for the whole campaign.

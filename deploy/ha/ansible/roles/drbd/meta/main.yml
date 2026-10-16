@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  author: Kolapsis
+  role_name: drbd
+  description: DRBD 9 from the vendor packages, protocol C, no automatic split-brain resolution
+  license: LicenseRef-Maintenant-Commercial
+  min_ansible_version: "2.15"
+dependencies: []

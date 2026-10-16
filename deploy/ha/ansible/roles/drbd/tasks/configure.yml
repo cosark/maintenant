@@ -1,0 +1,71 @@
+---
+- name: Write the DRBD global settings
+  ansible.builtin.template:
+    src: global_common.conf.j2
+    dest: /etc/drbd.d/global_common.conf
+    mode: "0644"
+
+- name: Write the replicated volume
+  ansible.builtin.template:
+    src: resource.res.j2
+    dest: "/etc/drbd.d/{{ drbd_resource }}.res"
+    mode: "0644"
+  register: drbd_resource_file
+
+- name: Read whether the resource is up
+  ansible.builtin.command:
+    argv: [drbdsetup, status, "{{ drbd_resource }}"]
+  register: drbd_up
+  changed_when: false
+  failed_when: false
+
+- name: Write the metadata on a blank disk
+  ansible.builtin.include_tasks: metadata.yml
+  when: drbd_up.rc != 0
+
+- name: Apply the configuration to the kernel
+  ansible.builtin.command:
+    argv: [drbdadm, adjust, "{{ drbd_resource }}"]
+  when: drbd_up.rc != 0 or drbd_resource_file is changed
+  changed_when: true
+
+- name: Wait for the peers to connect
+  ansible.builtin.command:
+    argv: [drbdadm, cstate, "{{ drbd_resource }}"]
+  register: drbd_cstate
+  changed_when: false
+  until: drbd_cstate.stdout_lines | length > 0 and drbd_cstate.stdout_lines | reject('equalto', 'Connected') | list | length == 0
+  retries: "{{ drbd_connect_retries }}"
+  delay: "{{ drbd_connect_delay }}"
+
+- name: Read the disk states
+  ansible.builtin.command:
+    argv: [drbdadm, dstate, "{{ drbd_resource }}"]
+  register: drbd_dstate
+  changed_when: false
+
+# Both sides Inconsistent only happens on fresh metadata: no write has ever
+# been acknowledged, so forcing one side to seed the other loses nothing.
+- name: Seed the first full synchronisation from the initial primary
+  ansible.builtin.command:
+    argv: [drbdadm, primary, --force, "{{ drbd_resource }}"]
+  when:
+    - inventory_hostname == drbd_initial_primary
+    - drbd_dstate.stdout | trim == 'Inconsistent/Inconsistent'
+  register: drbd_seeded
+  changed_when: true
+
+- name: Hand the promotion back to OpenSVC
+  ansible.builtin.command:
+    argv: [drbdadm, secondary, "{{ drbd_resource }}"]
+  when: drbd_seeded is changed
+  changed_when: true
+
+- name: Wait for both copies to be up to date
+  ansible.builtin.command:
+    argv: [drbdadm, dstate, "{{ drbd_resource }}"]
+  register: drbd_dstate
+  changed_when: false
+  until: drbd_dstate.stdout | trim == 'UpToDate/UpToDate'
+  retries: "{{ drbd_sync_retries }}"
+  delay: "{{ drbd_sync_delay }}"

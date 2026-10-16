@@ -1,0 +1,38 @@
+# {{ ansible_managed }}
+resource {{ drbd_resource }} {
+	options {
+		# OpenSVC promotes and demotes; opening the device never does.
+		auto-promote no;
+	}
+
+	net {
+		protocol C;
+		allow-two-primaries no;
+		after-sb-0pri disconnect;
+		after-sb-1pri disconnect;
+		after-sb-2pri disconnect;
+		rr-conflict disconnect;
+	}
+
+	disk {
+		disk-flushes yes;
+		md-flushes yes;
+	}
+
+	volume 0 {
+		device {{ drbd_device }};
+		disk {{ drbd_backing_device }};
+		meta-disk internal;
+	}
+{% for node in drbd_nodes %}
+
+	on {{ hostvars[node].ansible_facts.hostname }} {
+		node-id {{ loop.index0 }};
+		address {{ hostvars[node].ansible_host | default(node) }}:{{ drbd_port }};
+	}
+{% endfor %}
+
+	connection-mesh {
+		hosts{% for node in drbd_nodes %} {{ hostvars[node].ansible_facts.hostname }}{% endfor %};
+	}
+}

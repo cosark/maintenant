@@ -1,0 +1,23 @@
+---
+- name: Read the settings the kernel runs with
+  ansible.builtin.command:
+    argv: [drbdsetup, show, --show-defaults, "{{ drbd_resource }}"]
+  register: drbd_running
+  changed_when: false
+
+# FR-018 and FR-023: synchronous replication, flushes on, a single primary, and
+# a split brain that stops replication instead of discarding a side.
+- name: Refuse settings that could lose an acknowledged write
+  ansible.builtin.assert:
+    that: drbd_running.stdout is search('(?m)^\s*' ~ (item.split() | join('\s+')) ~ ';')
+    fail_msg: "{{ inventory_hostname }} does not run {{ drbd_resource }} with {{ item }}"
+  loop:
+    - auto-promote no
+    - protocol C
+    - allow-two-primaries no
+    - after-sb-0pri disconnect
+    - after-sb-1pri disconnect
+    - after-sb-2pri disconnect
+    - rr-conflict disconnect
+    - disk-flushes yes
+    - md-flushes yes

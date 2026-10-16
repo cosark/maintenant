@@ -22,6 +22,8 @@
     - maintenant_check
     - role: postgres_ha
       when: ha_mode | default('ip-only') == 'postgres/streaming'
+    - role: drbd
+      when: ha_mode | default('ip-only') == 'sqlite/drbd'
     - opensvc_service
 
 - name: Run the witness container

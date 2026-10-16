@@ -1,0 +1,36 @@
+---
+# Overridden by group_vars/all/versions.yml, which is where the freeze lives.
+drbd_version: "9.2"
+drbd_dkms_package_version: "9.2.20-1"
+drbd_utils_package_version: "9.35.0-1"
+
+drbd_codename: "{{ node_codename | default('bookworm') }}"
+
+# LINBIT publishes no DRBD 9 for Debian 12 under bookworm; its proxmox-8 suite
+# is built on bookworm and is the vendor's public channel for it.
+drbd_repo_url: https://packages.linbit.com/public
+drbd_repo_suite: proxmox-8
+drbd_repo_component: drbd-9
+drbd_keyring_url: https://packages.linbit.com/public/linbit-keyring.deb
+drbd_keyring: /etc/apt/trusted.gpg.d/linbit-keyring.gpg
+
+drbd_resource: maintenant
+drbd_device: /dev/drbd0
+drbd_port: 7789
+drbd_backing_device: "{{ ha_drbd_backing_device | default('') }}"
+
+drbd_nodes: "{{ groups['opensvc_cluster'] }}"
+
+# The node whose blank disk seeds the first full synchronisation: the preferred
+# node of the inventory, or the first cluster host when none is marked.
+drbd_initial_primary: >-
+  {{ ((groups['opensvc_cluster'] | map('extract', hostvars)
+       | selectattr('ha_preferred', 'defined') | selectattr('ha_preferred')
+       | map(attribute='inventory_hostname') | list)
+      + groups['opensvc_cluster']) | first }}
+
+drbd_connect_retries: 24
+drbd_connect_delay: 5
+# Covers a full synchronisation of the bench disk with room to spare.
+drbd_sync_retries: 180
+drbd_sync_delay: 10

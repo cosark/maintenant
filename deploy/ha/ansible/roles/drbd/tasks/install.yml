@@ -1,0 +1,75 @@
+---
+- name: Refuse a node image the pinned packages are not built for
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == 'Debian'
+      - ansible_facts.distribution_release == drbd_codename
+    fail_msg: >-
+      drbd-dkms {{ drbd_dkms_package_version }} comes from the LINBIT
+      {{ drbd_repo_suite }} suite, built for {{ drbd_codename }}; this node runs
+      {{ ansible_facts.distribution_release }}.
+
+- name: Install the LINBIT signing key
+  ansible.builtin.apt:
+    deb: "{{ drbd_keyring_url }}"
+
+- name: Declare the LINBIT repository
+  ansible.builtin.deb822_repository:
+    name: linbit-drbd-9
+    types: [deb]
+    uris: "{{ drbd_repo_url }}"
+    suites: "{{ drbd_repo_suite }}"
+    components: ["{{ drbd_repo_component }}"]
+    signed_by: "{{ drbd_keyring }}"
+    state: present
+
+# Without this, an unattended apt upgrade would move the bench off the build
+# every measurement is attached to (FR-059).
+- name: Hold DRBD at the pinned build
+  ansible.builtin.copy:
+    dest: /etc/apt/preferences.d/linbit-drbd
+    mode: "0644"
+    content: |
+      Package: drbd-dkms
+      Pin: version {{ drbd_dkms_package_version }}
+      Pin-Priority: 1001
+
+      Package: drbd-utils
+      Pin: version {{ drbd_utils_package_version }}
+      Pin-Priority: 1001
+
+# The distribution kernel only carries DRBD 8.4; dkms builds the 9 module
+# against the headers of the running kernel.
+- name: Install DRBD 9 and the headers its module is built against
+  ansible.builtin.apt:
+    name:
+      - "linux-headers-{{ ansible_facts.kernel }}"
+      - "drbd-dkms={{ drbd_dkms_package_version }}"
+      - "drbd-utils={{ drbd_utils_package_version }}"
+    state: present
+    update_cache: true
+    allow_downgrade: true
+
+- name: Load the DRBD module
+  ansible.builtin.command:
+    argv: [modprobe, drbd]
+    creates: /sys/module/drbd
+
+- name: Read the release of the loaded module
+  ansible.builtin.slurp:
+    src: /sys/module/drbd/version
+  register: drbd_loaded
+
+- name: Refuse a module other than the pinned DRBD 9
+  ansible.builtin.assert:
+    that: (drbd_loaded.content | b64decode | trim) is match(drbd_version | regex_escape ~ '\.')
+    fail_msg: >-
+      the campaign is pinned to DRBD {{ drbd_version }} but the kernel runs
+      {{ drbd_loaded.content | b64decode | trim }}; an in-tree 8.4 module loaded
+      before the dkms one is the usual cause.
+
+# OpenSVC brings the resource up and down; a boot-time start would race it.
+- name: Leave the resource to OpenSVC at boot
+  ansible.builtin.systemd_service:
+    name: drbd.service
+    enabled: false
