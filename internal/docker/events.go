@@ -47,6 +47,13 @@ func (c *Client) StreamEvents(ctx context.Context) <-chan ContainerEvent {
 // relayEvents runs until ctx ends or the daemon stops answering after a cut, and returns why.
 func (c *Client) relayEvents(ctx context.Context, out chan<- ContainerEvent) error {
 	var since string
+	// The first subscription after a connect replays from it, so a container started during the startup reconcile is not missed.
+	c.mu.Lock()
+	if !c.replayFrom.IsZero() {
+		since = c.replayFrom.Format(time.RFC3339Nano)
+		c.replayFrom = time.Time{}
+	}
+	c.mu.Unlock()
 	backoff := retry.New(initialBackoff, maxBackoff, 0)
 	for {
 		resume, cut := c.relaySubscription(ctx, out, since)

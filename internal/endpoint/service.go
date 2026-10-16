@@ -119,33 +119,17 @@ func (s *Service) SetEndpointRemovedCallback(cb EndpointRemovedCallback) {
 	s.onEndpointRemoved = cb
 }
 
-// Start stores the context for adding endpoints later and enrols every endpoint already active in the store.
-func (s *Service) Start(ctx context.Context) error {
+// Start stores the context for adding endpoints later and resumes checks of the active standalone endpoints.
+func (s *Service) Start(ctx context.Context) {
 	s.ctx = ctx
-	if err := s.ReloadActiveEndpoints(ctx); err != nil {
-		return fmt.Errorf("endpoint: reload on start: %w", err)
-	}
-	return nil
-}
-
-// ReloadActiveEndpoints enrols every active endpoint the server probes itself, leaving those owned by a remote agent alone.
-func (s *Service) ReloadActiveEndpoints(ctx context.Context) error {
-	endpoints, err := s.store.ListEndpoints(ctx, ListEndpointsOpts{})
+	eps, err := s.store.ListEndpoints(ctx, ListEndpointsOpts{Source: string(SourceStandalone)})
 	if err != nil {
-		return fmt.Errorf("list active endpoints: %w", err)
+		s.logger.Error("load standalone endpoints", "error", err)
+		return
 	}
-
-	enrolled := 0
-	for _, ep := range endpoints {
-		if ep.AgentID != "" && ep.AgentID != uid.LocalAgent {
-			continue
-		}
+	for _, ep := range eps {
 		s.engine.AddEndpoint(ctx, ep)
-		enrolled++
 	}
-
-	s.logger.Info("endpoint: active endpoints enrolled", "count", enrolled, "total", len(endpoints))
-	return nil
 }
 
 // Stop shuts down the check engine.

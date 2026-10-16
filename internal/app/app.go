@@ -846,9 +846,7 @@ func (a *App) Start(ctx context.Context) error {
 	go a.pruneOrphanAlerts(ctx)
 
 	a.notifier.Start(ctx)
-	if err := a.endpointSvc.Start(ctx); err != nil {
-		return err
-	}
+	a.endpointSvc.Start(ctx)
 	a.heartbeatSvc.StartDeadlineChecker(ctx)
 	if !a.cfg.DemoMode {
 		a.outboundSvc.Start(ctx)
