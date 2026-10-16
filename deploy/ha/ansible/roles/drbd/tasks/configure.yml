@@ -55,6 +55,12 @@
   register: drbd_seeded
   changed_when: true
 
+- name: Create the file system the service mounts
+  ansible.builtin.command:
+    argv: [mkfs.ext4, -q, -L, maintenant, "{{ drbd_device }}"]
+  when: drbd_seeded is changed
+  changed_when: true
+
 - name: Hand the promotion back to OpenSVC
   ansible.builtin.command:
     argv: [drbdadm, secondary, "{{ drbd_resource }}"]

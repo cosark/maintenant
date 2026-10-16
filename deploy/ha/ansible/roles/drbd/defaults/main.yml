@@ -14,8 +14,6 @@ drbd_repo_component: drbd-9
 drbd_keyring_url: https://packages.linbit.com/public/linbit-keyring.deb
 drbd_keyring: /etc/apt/trusted.gpg.d/linbit-keyring.gpg
 
-drbd_resource: maintenant
-drbd_device: /dev/drbd0
 drbd_port: 7789
 drbd_backing_device: "{{ ha_drbd_backing_device | default('') }}"
 

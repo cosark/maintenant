@@ -139,7 +139,8 @@ usage: lab <command> [options]
 modes: ip-only (default), postgres/streaming, sqlite/drbd, postgres/drbd
        ip-only is the bare bench: service address failover, no replicated
        backend. postgres/streaming runs a primary and a synchronous standby.
-       sqlite/drbd and postgres/drbd have no role yet: up refuses them.
+       sqlite/drbd replicates the state root with DRBD. postgres/drbd has
+       no service template yet: up refuses it.
 
 environment:
   LAB_INVENTORY   Ansible inventory to target

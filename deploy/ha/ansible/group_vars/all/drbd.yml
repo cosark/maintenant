@@ -1,0 +1,4 @@
+---
+# Shared with the service template, which mounts the volume in another play.
+drbd_resource: maintenant
+drbd_device: /dev/drbd0
