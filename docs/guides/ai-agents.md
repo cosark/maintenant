@@ -57,7 +57,7 @@ claude -p "<prompt with the alert JSON>" \
 
 `--setting-sources project` keeps the user's own settings and hooks out of the session (it runs in `reports/`, which has no project settings), `--tools ""` removes every built-in tool (no shell, no file access), `--strict-mcp-config` ignores any other MCP server configured for that user, and `--allowedTools` lists the read-only maintenant tools the session may call: `list_alerts`, `list_agents`, `list_containers`, `get_container`, `get_container_logs`, `get_resources`, `get_top_consumers`, `list_endpoints`, `get_endpoint_history`, `list_heartbeats`, `list_certificates`, `get_updates`, `get_security_insights`, `get_health`. Add `acknowledge_alert` to `READ_TOOLS` in `receiver.py` if you want the agent to acknowledge what it has diagnosed.
 
-`mcp.json` reaches maintenant over stdio, inside its own container, so no MCP port is opened:
+`mcp.json` reaches maintenant over stdio, through a relay run inside its container, so no MCP port is opened:
 
 ```json
 {
@@ -70,7 +70,7 @@ claude -p "<prompt with the alert JSON>" \
 }
 ```
 
-On a native install, call the binary directly: `"command": "maintenant", "args": ["--mcp-stdio"]`, with `MAINTENANT_DB` in `env` when the database is not at its default path. See [MCP Server](../features/mcp.md#authentication) for what the stdio transport can reach.
+On a native install, call the binary directly as the user maintenant runs as: `"command": "maintenant", "args": ["--mcp-stdio"]`, with `MAINTENANT_DB` in `env` when the database is not at its default path. See [MCP Server](../features/mcp.md#authentication) for what the stdio transport can reach.
 
 Run the receiver under your service manager (systemd, a supervisor, a container with the Docker CLI and Claude Code) once it works by hand.
 

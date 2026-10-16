@@ -689,7 +689,7 @@ func PrintHelp(w io.Writer, _ Config) {
 	_, _ = fmt.Fprintln(w, "Special:")
 	_, _ = fmt.Fprintln(w, "  --help, -h         Show this help and exit")
 	_, _ = fmt.Fprintln(w, "  --version, -v      Show version and exit")
-	_, _ = fmt.Fprintln(w, "  --mcp-stdio        Run as MCP stdio server (advanced)")
+	_, _ = fmt.Fprintln(w, "  --mcp-stdio        Relay MCP over stdio to the running instance (advanced)")
 	_, _ = fmt.Fprintln(w)
 	_, _ = fmt.Fprintln(w, "Documentation: https://docs.maintenant.dev")
 	_, _ = fmt.Fprintln(w, "Install via script: curl -fsSL https://install.maintenant.dev | sudo bash")

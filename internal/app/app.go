@@ -729,12 +729,6 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	return a, nil
 }
 
-// RunMCPStdio runs the MCP server over stdin/stdout, then returns.
-func (a *App) RunMCPStdio(ctx context.Context) error {
-	a.logger.Info("starting MCP server in stdio mode")
-	return a.mcpServer.Run(ctx, &gomcp.StdioTransport{})
-}
-
 // multihostPlanAllowed reports whether the multi-host plan may run.
 //
 // It is not the same question as extension.Allows(CapMultihost). A Personal
@@ -777,8 +771,6 @@ func multihostPlanPermitted(capabilityGranted bool, licenseStatus string) bool {
 // Start begins all background services and the HTTP server.
 // It blocks until ctx is canceled, then performs a graceful shutdown.
 func (a *App) Start(ctx context.Context) error {
-	// Checked here rather than in New(): this is the only path that listens, so
-	// --mcp-stdio keeps working without OAuth credentials it has no use for.
 	if err := a.cfg.ValidateHTTP(); err != nil {
 		return err
 	}
@@ -953,6 +945,12 @@ func (a *App) Start(ctx context.Context) error {
 	// Starts a local agent goroutine that connects to the local gRPC endpoint.
 	if a.serveAgents != nil && a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && a.multihostPlanAllowed() && !a.cfg.DemoMode {
 		a.startEmbeddedAgent(ctx)
+	}
+
+	if a.cfg.Mode != "agent" {
+		if err := mcp.ServeSocket(ctx, a.mcpServer, mcp.SocketPath(a.cfg.DBPath), a.logger); err != nil {
+			a.logger.Warn("local MCP socket unavailable, --mcp-stdio cannot reach this instance", "error", err)
+		}
 	}
 
 	// HTTP server — never in agent mode: an agent only streams to the server and

@@ -188,9 +188,6 @@ var ErrMCPUnauthenticated = errors.New(
 var ErrDatabaseURLInAgentMode = errors.New(
 	"MAINTENANT_DATABASE_URL is set but --mode=agent")
 
-// ValidateHTTP rejects a configuration that must not be served over HTTP. It is
-// deliberately not called from New(): --mcp-stdio shares that path and never
-// listens, so refusing there would break a local stdio client for no gain.
 // ValidateStorage refuses a storage configuration the mode cannot honour.
 // The agent stores its state in SQLite, always (FR-003, FR-030); server and
 // embedded both run the same server plane and accept an external database.
@@ -316,6 +313,7 @@ func (c Config) ValidateAgentSpool() error {
 	return errors.Join(errs...)
 }
 
+// ValidateHTTP rejects a configuration that must not be served over HTTP.
 func (c Config) ValidateHTTP() error {
 	if c.MCP.Enabled && !c.MCP.AllowUnauthenticated &&
 		(c.MCP.ClientID == "" || c.MCP.ClientSecret == "") {
