@@ -74,6 +74,8 @@ OM="sudo -n om"
 OM_DAEMON_STATUS="$OM daemon status -o json --sections daemon,nodes,arbitrators"
 
 PG_STATE="sudo -n /usr/local/sbin/maintenant-pg-state"
+# Must match drbd_resource in ansible/group_vars/all/drbd.yml.
+DRBD_STATE="sudo -n drbdsetup status --json --statistics maintenant"
 GIVEBACK_LAG_TRIES=10
 
 # Must match opensvc_service_log_identifier: the tag systemd-cat gives the binary's output.
@@ -127,7 +129,9 @@ usage: lab <command> [options]
   down                   destroy everything, leaving no residue
   host-setup             one-time host preparation (calls sudo itself):
                          image directories, fencing account and key
-  status [--json]        cluster, mode, probes and OpenSVC agent of each node
+  status [--json]        cluster, mode, probes and OpenSVC agent of each node;
+                         in sqlite/drbd, names the side of a storage split
+                         brain to keep (deploy/ha/split-brain.md)
   chaos <n>              inject scenario n
   heal <n>               repair scenario n
   run-all [--mode <mode>] [--repeat <k>]
@@ -247,7 +251,7 @@ node_status() {
 	address=$2
 	if ! ssh_to "$name" true >/dev/null 2>&1; then
 		jq -n --arg n "$name" \
-			'{name: $n, reachable: false, opensvc: "unreachable", holds_address: false, postgres: null}'
+			'{name: $n, reachable: false, opensvc: "unreachable", holds_address: false, postgres: null, drbd: null}'
 		return 0
 	fi
 	if ssh_to "$name" "$OM_DAEMON_STATUS" >/dev/null 2>&1; then
@@ -267,8 +271,23 @@ node_status() {
 		pg=$(ssh_to "$name" "$PG_STATE" 2>/dev/null | jq -c '.' 2>/dev/null) || pg=""
 		[ -n "$pg" ] || pg='{"role": "unknown"}'
 	fi
-	jq -n --arg n "$name" --arg om "$om" --argjson holds "$holds" --argjson pg "$pg" \
-		'{name: $n, reachable: true, opensvc: $om, holds_address: $holds, postgres: $pg}'
+	drbd="null"
+	if [ "$(current_mode)" = sqlite/drbd ]; then
+		drbd=$(ssh_to "$name" "$DRBD_STATE" 2>/dev/null | jq -c '.[0] | {
+			role,
+			disk: .devices[0]["disk-state"],
+			quorum: .devices[0].quorum,
+			connections: [.connections[] | {
+				peer: .name,
+				state: .["connection-state"],
+				peer_disk: .peer_devices[0]["peer-disk-state"],
+				out_of_sync_kib: .peer_devices[0]["out-of-sync"]
+			}]
+		}' 2>/dev/null) || drbd=""
+		[ -n "$drbd" ] || drbd='{"role": "unknown", "connections": []}'
+	fi
+	jq -n --arg n "$name" --arg om "$om" --argjson holds "$holds" --argjson pg "$pg" --argjson drbd "$drbd" \
+		'{name: $n, reachable: true, opensvc: $om, holds_address: $holds, postgres: $pg, drbd: $drbd}'
 }
 
 unit_status() {
@@ -327,6 +346,8 @@ collect_status() {
 		observer=$(unit_status "$probe_host" "$PROBE_OBSERVER_UNIT")
 	fi
 
+	storage=$(printf '%s\n' "$nodes" | jq -c -f "$LAB_DIR/drbd-split-brain.jq")
+
 	jq -n \
 		--arg mode "$(current_mode)" \
 		--arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -336,6 +357,7 @@ collect_status() {
 		--arg writes "$writes" \
 		--arg observer "$observer" \
 		--argjson nodes "$nodes" \
+		--argjson storage "$storage" \
 		'
 		def holders: [$nodes[] | select(.holds_address)] | length;
 		def postgres_nominal:
@@ -350,6 +372,14 @@ collect_status() {
 				  and $s[0].postgres.receiver == "streaming"
 				  and ($s[0].postgres.fenced | not))
 			end;
+		def drbd_nominal:
+			if $mode != "sqlite/drbd" then true
+			else
+				([$nodes[] | select(.drbd.role == "Primary")] as $p
+				| ($p | length) == 1 and $p[0].holds_address
+				  and all($nodes[]; .drbd.disk == "UpToDate" and .drbd.quorum
+				      and all(.drbd.connections[]; .state == "Connected" and (.peer_disk == "UpToDate" or .peer_disk == "Diskless"))))
+			end;
 		{
 			mode: $mode,
 			generated_at: $at,
@@ -357,8 +387,10 @@ collect_status() {
 			nodes: $nodes,
 			arbitrator: $arb,
 			probes: {availability: $availability, writes: $writes, observer: $observer},
+			storage: $storage,
 			verdict: (
 				if holders > 1 then "split"
+				elif $storage.split_brain then "split"
 				elif holders == 0 then "down"
 				elif $mode == "postgres/streaming" and ([$nodes[] | select(.postgres.role == "primary")] | length) > 1 then "split"
 				elif ([$nodes[] | select(.reachable | not)] | length) > 0 then "degraded"
@@ -366,6 +398,7 @@ collect_status() {
 				elif $arb != "up" then "degraded"
 				elif $availability != "running" or $writes != "running" or $observer != "running" then "degraded"
 				elif postgres_nominal | not then "degraded"
+				elif drbd_nominal | not then "degraded"
 				else "green"
 				end
 			)
@@ -384,13 +417,21 @@ render_status() {
 		"arbitrator \(.arbitrator)",
 		"probes     availability=\(.probes.availability) writes=\(.probes.writes) observer=\(.probes.observer)",
 		"",
-		"NODE         REACHABLE  OPENSVC      ADDRESS  POSTGRES",
+		"NODE         REACHABLE  OPENSVC      ADDRESS  BACKEND",
 		(.nodes[] | [pad(.name; 12), pad(if .reachable then "yes" else "no" end; 10), pad(.opensvc; 12), pad(if .holds_address then "held" else "-" end; 8),
-			(if .postgres == null then "-"
+			(if .drbd != null then "drbd \(.drbd.role) \(.drbd.disk // "-"), peers \([.drbd.connections[] | "\(.peer)=\(.state)/\(.peer_disk // "-")"] | join(" "))"
+			 elif .postgres == null then "-"
 			 elif .postgres.fenced then "\(.postgres.role) fenced"
 			 elif .postgres.role == "primary" then "primary, standby \(.postgres.standby.state // "absent")/\(.postgres.standby.sync_state // "-") lag=\(.postgres.standby.lag_bytes // "-")"
 			 elif .postgres.role == "standby" then "standby, receiver \(.postgres.receiver // "none"), synced=\(.postgres.synced)"
 			 else .postgres.role end)] | join(" ")),
+		(if .storage.split_brain then
+			"",
+			"storage    \($red)split brain\($reset): " +
+			(if .storage.keep == null then "no side named (\(.storage.reason)), compare both copies"
+			 else "keep \(.storage.keep) (\(.storage.reason)), discard \(.storage.discard | join(" and "))" end) +
+			"; resolve by hand with deploy/ha/split-brain.md"
+		 else empty end),
 		"",
 		"verdict    \(colour(.verdict))\(.verdict)\($reset)"
 	'

@@ -24,6 +24,7 @@ No throwaway script is ever required to deploy.
 | `ansible/roles/lab_witness/`        | Docker and the witness container whose resource history counts the samples a failover lost                                           |
 | `ansible/roles/probes/`             | the three probes, built, shipped and kept running on the measurement machine                                                        |
 | `opensvc/`                          | service templates, one per replication mode                                                                                         |
+| `split-brain.md`                    | the manual resolution of a DRBD split brain in `sqlite/drbd`, whose side to keep `lab status` names                                  |
 | `lab/`                              | bench topology, provisioning, `lab` CLI, scenarios and probes                                                                       |
 | `lab/lab`                           | the single entry point: `up`, `down`, `status`, `chaos`, `heal`, `run-all`, `giveback`                                              |
 | `lab/scenarios/`                    | the twelve scenarios of the bench plan, plus the mode-specific ones                                                                 |
