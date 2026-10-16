@@ -22,7 +22,7 @@ maintenant_service_address: "{{ ha_service_address }}"
 maintenant_service_name: "{{ ha_service_name }}"
 maintenant_grpc_url: "grpcs://{{ maintenant_service_name }}:{{ maintenant_grpc_port }}"
 
-maintenant_sqlite_synchronous: NORMAL
+maintenant_sqlite_synchronous: "{{ 'FULL' if (ha_mode | default('ip-only')) == 'sqlite/drbd' else 'NORMAL' }}"
 
 # The PostgreSQL modes run the database on the node that runs the service, so the
 # product reaches it over the local socket, as its own system account.

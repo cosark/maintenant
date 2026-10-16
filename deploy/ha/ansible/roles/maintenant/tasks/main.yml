@@ -6,6 +6,13 @@
     that: maintenant_require_state_dir | bool
     fail_msg: maintenant_require_state_dir must stay true in a highly available deployment.
 
+# NORMAL loses acknowledged commits on a crash, which DRBD then replicates faithfully (FR-017).
+- name: Refuse a replicated SQLite journal below FULL
+  ansible.builtin.assert:
+    that: maintenant_sqlite_synchronous | upper == 'FULL'
+    fail_msg: "sqlite/drbd needs maintenant_sqlite_synchronous FULL, got {{ maintenant_sqlite_synchronous }}"
+  when: ha_mode | default('ip-only') == 'sqlite/drbd'
+
 - name: Refuse a deployment without a Pro licence key
   ansible.builtin.assert:
     that: maintenant_license_key | length > 0

@@ -78,3 +78,13 @@ func TestSynchronousRejectsUnknownLevels(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckSynchronousRefusesAMismatch(t *testing.T) {
+	db := openSynchronous(t, "NORMAL")
+	if err := checkSynchronous(db.db, SynchronousNormal); err != nil {
+		t.Fatalf("NORMAL database checked against NORMAL: %v", err)
+	}
+	if err := checkSynchronous(db.db, SynchronousFull); err == nil {
+		t.Fatal("NORMAL database accepted as FULL")
+	}
+}

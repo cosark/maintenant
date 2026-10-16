@@ -126,14 +126,31 @@ func OpenWithOptions(dbPath string, opts Options, logger *slog.Logger) (*DB, err
 		logger:  logger,
 		dialect: DialectSQLite,
 	}
-	sdb.readStorageMode()
+	if err := checkSynchronous(db, synchronous); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	sdb.readStorageMode(synchronous)
 
 	return sdb, nil
 }
 
+// checkSynchronous refuses a database whose journal does not run at the requested synchronous level.
+func checkSynchronous(db *sql.DB, want string) error {
+	var got int
+	if err := db.QueryRow("PRAGMA synchronous").Scan(&got); err != nil {
+		return fmt.Errorf("read sqlite synchronous level: %w", err)
+	}
+	levels := map[string]int{SynchronousNormal: 1, SynchronousFull: 2}
+	if got != levels[want] {
+		return fmt.Errorf("sqlite synchronous level is %d, want %d (%s)", got, levels[want], want)
+	}
+	return nil
+}
+
 // readStorageMode reports the settings that decide whether freed pages ever
 // return to the filesystem, and records the answer for the retention cleanup.
-func (d *DB) readStorageMode() {
+func (d *DB) readStorageMode(synchronous string) {
 	var autoVacuum, pageSize, freelist int
 	row := d.db.QueryRow("PRAGMA auto_vacuum")
 	if err := row.Scan(&autoVacuum); err != nil {
@@ -151,6 +168,7 @@ func (d *DB) readStorageMode() {
 	d.incrementalVacuum = autoVacuum == 2
 
 	d.logger.Info("sqlite storage",
+		"synchronous", synchronous,
 		"auto_vacuum", mode,
 		"page_size", pageSize,
 		"freelist_pages", freelist)
