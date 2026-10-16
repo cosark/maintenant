@@ -327,6 +327,77 @@ jobs:
       - name: Verify the installed binary
         run: maintenant --version
 
+  publish-chart:
+    name: Publish the Helm chart (OCI)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    env:
+      CHART_REGISTRY: ghcr.io
+      CHART_REPOSITORY: oci://ghcr.io/kolapsis/charts
+
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Check out the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Lint and package the chart
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="${TAG#v}"
+          sed -i "s/__APP_VERSION__/${version}/" deploy/helm/maintenant/Chart.yaml
+          if grep -q __APP_VERSION__ deploy/helm/maintenant/Chart.yaml; then
+            echo "::error::the __APP_VERSION__ placeholder survived substitution"
+            exit 1
+          fi
+          helm lint deploy/helm/maintenant
+          helm package deploy/helm/maintenant \
+            --version "$version" --app-version "$version" \
+            --destination chart-dist
+          test -s "chart-dist/maintenant-${version}.tgz"
+
+      - name: Login to GitHub Container Registry
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GH_TOKEN" | helm registry login "$CHART_REGISTRY" --username "$GH_ACTOR" --password-stdin
+
+      - name: Push the chart
+        id: push
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="${TAG#v}"
+          helm push "chart-dist/maintenant-${version}.tgz" "$CHART_REPOSITORY" 2>&1 | tee push.log
+          digest="$(sed -n 's/^Digest: //p' push.log)"
+          case "$digest" in
+            sha256:*) ;;
+            *) echo "::error::could not read the chart digest"; exit 1 ;;
+          esac
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Sign the chart (keyless Sigstore)
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "ghcr.io/kolapsis/charts/maintenant@${DIGEST}"
+
   # Reuses the existing multi-arch build chain: the image published by a release
   # is exactly the one the CI produces, with no parallel build path.
   build:

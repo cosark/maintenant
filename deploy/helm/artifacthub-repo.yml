@@ -1,0 +1,4 @@
+# Pushed as oci://ghcr.io/kolapsis/charts/maintenant:artifacthub.io, never read from git.
+owners:
+  - name: Benjamin Touchard
+    email: hello@maintenant.dev
