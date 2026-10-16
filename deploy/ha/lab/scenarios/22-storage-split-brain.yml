@@ -1,0 +1,96 @@
+---
+# Scenario 22, specific to the DRBD modes. Numbers 1 to 12 belong to the bench
+# plan; the allocation of the others is fixed in README.md.
+id: 22
+slug: storage-split-brain
+name: Storage split-brain and its manual resolution
+source: sqlite/drbd
+repetitions: 1
+injection:
+  'on': passive
+  # The double failure the safeties exist for, made on purpose: the passive copy
+  # leaves the mesh, is forced primary without quorum and written to, then rejoins.
+  command: |
+    set -eu
+    om "$LAB_SERVICE" freeze
+    drbdadm disconnect maintenant
+    drbdsetup resource-options maintenant --quorum=off
+    drbdadm primary --force maintenant
+    mkdir -p /run/lab-split-brain
+    mount /dev/drbd0 /run/lab-split-brain
+    date -u +%Y-%m-%dT%H:%M:%SZ >/run/lab-split-brain/split-brain-marker
+    umount /run/lab-split-brain
+    drbdadm secondary maintenant
+    drbdadm adjust maintenant
+repair:
+  'on': host
+  command: |
+    set -eu
+    tries=0
+    # lab status exits 1 on any verdict but green: only its JSON is read.
+    until $LAB_CLI status --json 2>/dev/null | tee "$LAB_RUN_DIR/scenario-22-status" | jq -e '.storage.split_brain' >/dev/null; do
+      tries=$((tries + 1))
+      if [ "$tries" -ge 30 ]; then
+        echo "DRBD never reported the split brain" >&2
+        exit 1
+      fi
+      sleep 2
+    done
+    jq -e --arg a "$LAB_ACTIVE" --arg p "$LAB_PASSIVE" '.verdict == "split" and .storage.keep == $a
+      and .storage.discard == [$p] and .service.holders == [$a]' "$LAB_RUN_DIR/scenario-22-status" >/dev/null || {
+      echo "lab status did not name $LAB_ACTIVE as the side to keep:" >&2
+      jq -c '{verdict, storage, holders: .service.holders}' "$LAB_RUN_DIR/scenario-22-status" >&2
+      exit 1
+    }
+    # Nothing resolves it on its own (FR-025): still split after a while.
+    sleep 30
+    $LAB_CLI status --json | jq -e '.storage.split_brain' >/dev/null
+    # deploy/ha/split-brain.md, step 5 then step 6.
+    $LAB_SSH_PASSIVE "sudo -n sh -c 'drbdadm secondary maintenant && drbdadm disconnect maintenant && drbdadm connect --discard-my-data maintenant'"
+    $LAB_SSH_ACTIVE "sudo -n drbdadm adjust maintenant"
+    tries=0
+    until $LAB_SSH_PASSIVE "sudo -n drbdsetup status --json maintenant" | jq -e '.[0] | .devices[0]["disk-state"] == "UpToDate"
+      and all(.connections[]; .["connection-state"] == "Connected")' >/dev/null; do
+      tries=$((tries + 1))
+      if [ "$tries" -ge 120 ]; then
+        echo "$LAB_PASSIVE did not resynchronise from $LAB_ACTIVE" >&2
+        exit 1
+      fi
+      sleep 5
+    done
+    $LAB_SSH_ACTIVE "sudo -n om $LAB_SERVICE unfreeze"
+verify:
+  'on': host
+  command: |
+    $LAB_SSH_ACTIVE ip -o addr show | grep -q " inet $LAB_SERVICE_ADDRESS/" &&
+      ! $LAB_SSH_ACTIVE "sudo -n test -e $LAB_STATE_DIR/split-brain-marker" &&
+      curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" | jq -e '.storage.connected == true' >/dev/null
+measures:
+- writes
+- nodes_written
+- alerts_induced
+modes:
+  ip-only:
+    applicable: false
+    reason: no replicated volume in this mode
+  postgres/streaming:
+    applicable: false
+    reason: no replicated volume in this mode; a PostgreSQL split brain is scenario 12
+  sqlite/drbd:
+    applicable: true
+    expected: 'Both copies took writes while apart: the active one from the application, the
+      passive one from the injection. On reconnection DRBD detects the split brain and drops
+      the connection on both sides (StandAlone, after-sb-*pri disconnect); both copies stay
+      intact and nothing resolves it on its own, it is still there 30 s later (FR-025). The
+      service never moves and the passive copy is never promoted by om3. lab status reports
+      verdict split and names the active node as the side to keep (reason primary). The
+      repair is the manual procedure of deploy/ha/split-brain.md: the passive side is
+      discarded, resynchronises from the kept side, and the service is unfrozen. After repair
+      the kept database does not hold the marker written on the discarded side, the service
+      is still on the active node, and writes.lost == 0.'
+  postgres/drbd:
+    applicable: true
+    expected: 'Same outcome as in sqlite/drbd: DRBD refuses to reconnect, lab status names the
+      side to keep, and the manual procedure discards the other one.'
+note: The injection bypasses quorum on purpose; it shows what the bench does when the
+  safeties have been defeated, not that they can be.

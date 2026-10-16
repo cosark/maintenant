@@ -1,0 +1,66 @@
+---
+# Scenario 21, specific to the DRBD modes. Numbers 1 to 12 belong to the bench
+# plan; the allocation of the others is fixed in README.md.
+id: 21
+slug: volume-resync
+name: Volume resynchronisation when the node returns
+source: sqlite/drbd
+repetitions: 5
+injection:
+  'on': host
+  command: virsh destroy "$LAB_ACTIVE_DOMAIN"
+repair:
+  'on': host
+  command: |
+    set -eu
+    virsh start "$LAB_ACTIVE_DOMAIN"
+    tries=0
+    until $LAB_SSH_ACTIVE "sudo -n drbdsetup status --json maintenant" 2>/dev/null |
+      jq -e '.[0] | .devices[0]["disk-state"] == "UpToDate"
+        and all(.connections[]; .["connection-state"] == "Connected")' >/dev/null; do
+      if $LAB_SSH_ACTIVE "sudo -n drbdsetup status --json maintenant" 2>/dev/null | jq -e '.[0].role == "Primary"' >/dev/null; then
+        echo "$LAB_ACTIVE promoted its volume on its return" >&2
+        exit 1
+      fi
+      tries=$((tries + 1))
+      if [ "$tries" -ge 120 ]; then
+        echo "$LAB_ACTIVE did not resynchronise from $LAB_PASSIVE" >&2
+        exit 1
+      fi
+      sleep 5
+    done
+verify:
+  'on': host
+  command: |
+    $LAB_SSH_PASSIVE ip -o addr show | grep -q " inet $LAB_SERVICE_ADDRESS/" &&
+      ! $LAB_SSH_ACTIVE ip -o addr show 2>/dev/null | grep -q " inet $LAB_SERVICE_ADDRESS/" &&
+      ! $LAB_SSH_ACTIVE "sudo -n drbdsetup status --json maintenant" 2>/dev/null | jq -e '.[0].role == "Primary"' >/dev/null &&
+      curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" | jq -e '.storage.connected == true' >/dev/null
+measures:
+- rto_ms
+- writes
+- agents
+- nodes_written
+modes:
+  ip-only:
+    applicable: false
+    reason: no replicated volume in this mode
+  postgres/streaming:
+    applicable: false
+    reason: no replicated volume in this mode; the returning node is rebuilt as a standby in scenario 16
+  sqlite/drbd:
+    applicable: true
+    max_rto_s: 60
+    expected: 'The service fails over as in scenario 2 and keeps taking writes on the
+      survivor while the destroyed node is down; DRBD tracks the changed blocks in its
+      bitmap. When the node boots, its volume connects as Secondary and resynchronises from
+      the survivor, which is the sync source: the survivor''s writes are never overwritten by
+      the older copy, and writes.lost == 0. The returning node never promotes its volume and
+      never starts the service; the service stays on the survivor (no automatic giveback,
+      FR-012). The repair ends when both disks are UpToDate and every connection is
+      Connected, which is also when lab status is green again.'
+  postgres/drbd:
+    applicable: true
+    max_rto_s: 60
+    expected: 'Same outcome as in sqlite/drbd: the volume resynchronises from the survivor,
+      the returning node never promotes it, and the service stays on the survivor.'

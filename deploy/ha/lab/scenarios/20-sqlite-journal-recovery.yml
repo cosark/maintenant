@@ -1,0 +1,52 @@
+---
+# Scenario 20, specific to sqlite/drbd. Numbers 1 to 12 belong to the bench plan;
+# the allocation of the others is fixed in README.md.
+id: 20
+slug: sqlite-journal-recovery
+name: SQLite journal recovery after crash
+source: sqlite/drbd
+repetitions: 5
+settle_s: 5
+injection:
+  'on': active
+  # Detached and delayed, or the ssh session dies with the kernel and never returns.
+  command: nohup sh -c 'sleep 1; echo c > /proc/sysrq-trigger' >/dev/null 2>&1 &
+repair:
+  'on': host
+  command: |
+    for _ in $(seq 60); do LC_ALL=C virsh domstate "$LAB_ACTIVE_DOMAIN" | grep -q "shut off" && break; sleep 1; done
+    virsh start "$LAB_ACTIVE_DOMAIN"
+verify:
+  'on': host
+  command: |
+    set -eu
+    $LAB_SSH_PASSIVE ip -o addr show | grep -q " inet $LAB_SERVICE_ADDRESS/"
+    curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" | jq -e '.storage.connected == true' >/dev/null
+    $LAB_SSH_PASSIVE "sudo -n python3 -c 'import sqlite3, sys; sys.exit(sqlite3.connect(\"file:$LAB_STATE_DIR/maintenant.db?mode=ro\", uri=True).execute(\"PRAGMA quick_check\").fetchone()[0] != \"ok\")'"
+measures:
+- rto_ms
+- writes
+- telemetry_gap_s
+- agents
+modes:
+  ip-only:
+    applicable: false
+    reason: the database is local to each node in this mode, nothing is recovered on the other one
+  postgres/streaming:
+    applicable: false
+    reason: no SQLite database in this mode
+  sqlite/drbd:
+    applicable: true
+    max_rto_s: 60
+    expected: 'The active node panics while the writes probe keeps writing, so its SQLite
+      write-ahead log holds frames that were never checkpointed. The survivor fences it,
+      promotes the volume and mounts it; the ext4 journal is replayed at mount, then the
+      binary opens the database and SQLite replays its own write-ahead log before the
+      application answers. The database passes PRAGMA quick_check on the survivor,
+      storage.connected is true, and every acknowledged write is read back: writes.lost == 0,
+      with synchronous=FULL (FR-017). The service stays on the survivor after repair.'
+  postgres/drbd:
+    applicable: false
+    reason: no SQLite database in this mode; PostgreSQL's crash recovery on the volume is scenario 3
+note: Scenario 3 with the recovery itself checked. python3 is on every node for Ansible, and its
+  sqlite3 module reads the live database without stopping the binary.

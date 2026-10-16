@@ -300,6 +300,46 @@ checked down to the rebuild of the former primary and the end of the loss window
 | **Expected** | The giveback is refused while the preferred node is not a caught-up standby, streaming, synchronous and zero bytes behind. Once it is, the service goes back, the other node is rebuilt as its standby, and no acknowledged write is lost. |
 | **Measures** | `rto_ms`, `writes`, `primary_count`, `former_primary_rebuild`. |
 
+## DRBD scenarios
+
+In `sqlite/drbd` the state root sits on the DRBD volume `maintenant` (`/dev/drbd0`), replicated
+in protocol C between the two nodes, with a diskless third vote on the arbitrator. The service
+promotes the volume, mounts it and starts the binary; the passive copy stays connected as
+Secondary. The scenarios read the volume with `drbdsetup status --json maintenant`, and
+`lab status` is green only when exactly one node is Primary, holds the service address, and
+every disk is `UpToDate` with every connection `Connected`. Scenarios 21 and 22 act on the
+volume only, so they also apply to `postgres/drbd` if that mode is played.
+
+### 20. SQLite journal recovery after crash
+
+| | |
+|---|---|
+| **Injection** | `echo c > /proc/sysrq-trigger` on the active node while the writes probe keeps writing, as in scenario 3. |
+| **Repair** | Start the panicked node again; it rejoins as Secondary and the service stays on the survivor. |
+| **Expected** | The survivor fences the panicked node, promotes the volume and mounts it (the ext4 journal is replayed), then the binary opens the database and SQLite replays its write-ahead log before the application answers. The database passes `PRAGMA quick_check` on the survivor, read by the `sqlite3` module of the node's `python3` without stopping the binary; `storage.connected` is true and `writes.lost == 0`, with `synchronous=FULL` (FR-017). |
+| **Measures** | `rto_ms`, `writes`, `telemetry_gap_s`, `agents`. |
+
+### 21. Volume resynchronisation when the node returns
+
+| | |
+|---|---|
+| **Injection** | `virsh destroy` on the active node, as in scenario 2. The survivor keeps taking writes while the node is down. |
+| **Repair** | Start the VM, then wait until its disk is `UpToDate` and every connection `Connected`; the repair fails if the returning node promotes its volume. |
+| **Expected** | The returning node connects as Secondary and resynchronises from the survivor, which is the sync source: the older copy never overwrites an acknowledged write. It never promotes its volume and never starts the service; the service stays on the survivor (FR-012). |
+| **Measures** | `rto_ms`, `writes`, `agents`, `nodes_written`. |
+
+### 22. Storage split-brain and its manual resolution
+
+| | |
+|---|---|
+| **Injection** | On the passive node, with the service frozen: leave the DRBD mesh, disable quorum, force the volume primary, mount it and write a marker file, then demote it and restore the configuration with `drbdadm adjust`, which reconnects. Both copies have now been written while apart. |
+| **Repair** | Wait until `lab status` reports the split brain, check it names the active node as the side to keep, check the split brain is still there 30 s later, then apply `deploy/ha/split-brain.md`: discard the passive copy with `drbdadm connect --discard-my-data`, reconnect the kept side, wait for the resynchronisation and unfreeze the service. |
+| **Expected** | DRBD detects the split brain on reconnection and drops the connection on both sides (`StandAlone`); both copies stay intact and nothing resolves it automatically (FR-025). The service never moves. `lab status` reports verdict `split` and names the side to keep. After the manual resolution the kept database does not hold the marker, the service is still on the active node, and `writes.lost == 0`. |
+| **Measures** | `writes`, `nodes_written`, `alerts_induced`. |
+
+The injection defeats quorum on purpose: the scenario shows what happens once the safeties
+have been bypassed, not that they can be.
+
 ## Server log
 
 `lab run-all` keeps in `runs[].server_log` the lines with `insert ping` the server logged
