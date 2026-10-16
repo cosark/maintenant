@@ -48,7 +48,7 @@ One binary, three modes, selected with `MAINTENANT_MODE` (`--mode`):
 | `server` | Same as `embedded`, but the instance refuses to start below Personal. It is the only mode where `--embedded-agent` has an effect: it runs a local agent inside the process. |
 | `agent` | No HTTP server and no store of its own apart from the event spool (an external database URL is refused). The agent detects its local runtime, enrols against a server and streams to it. It starts even when no runtime answers, reports the host alone and retries the runtime in the background. It keeps its identity (`identity.json`), its event spool (`spool.db`) and a liveness file in `MAINTENANT_DATA_DIR`. |
 
-Two more entry points share the binary: `maintenant --mcp-stdio` serves the MCP server over stdin and stdout, and `maintenant healthcheck` backs the image `HEALTHCHECK` (it reads the agent liveness file when there is one, otherwise it calls `/api/v1/health` on the configured address). `--copy-store-to` copies an installation into an empty PostgreSQL database and exits.
+Two more entry points share the binary: `maintenant --mcp-stdio` relays stdin and stdout to the running instance's MCP server through the `mcp.sock` Unix socket next to the database, and `maintenant healthcheck` backs the image `HEALTHCHECK` (it reads the agent liveness file when there is one, otherwise it calls `/api/v1/health` on the configured address). `--copy-store-to` copies an installation into an empty PostgreSQL database and exits.
 
 ---
 

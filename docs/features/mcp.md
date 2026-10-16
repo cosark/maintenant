@@ -16,7 +16,7 @@ In a demo build, `/mcp` and the OAuth routes are not served, and the MCP server 
 
 | Transport | Use case | Auth |
 |-----------|----------|------|
-| **Stdio** (`--mcp-stdio`) | Local development, Claude Code | None (trusted local) |
+| **Stdio** (`--mcp-stdio`) | Claude Code or any local client on the same host | Access to the data directory |
 | **Streamable HTTP** (`/mcp`) | Remote access, Claude web/mobile, Claude Desktop | OAuth2 (client_id + secret), or none with an explicit opt-out |
 
 ---
@@ -25,7 +25,22 @@ In a demo build, `/mcp` and the OAuth routes are not served, and the MCP server 
 
 ### Claude Code (stdio)
 
-Add to your Claude Code MCP settings:
+`--mcp-stdio` does not open the database: it relays stdin and stdout to the running instance through the `mcp.sock` Unix socket that instance creates next to its database. The instance must be running.
+
+With Docker, run the relay inside the container:
+
+```json
+{
+  "mcpServers": {
+    "maintenant": {
+      "command": "docker",
+      "args": ["exec", "-i", "maintenant", "/app/maintenant", "--mcp-stdio"]
+    }
+  }
+}
+```
+
+On a native install, call the binary as the user maintenant runs as, with `MAINTENANT_DB` in `env` when the database is not at its default path:
 
 ```json
 {
@@ -65,7 +80,7 @@ MAINTENANT_MCP_ALLOWED_REDIRECT_URIS=https://claude.ai/api/mcp/auth_callback
 
 ### Stdio
 
-No authentication. The stdio transport is a local, trusted channel: only the process that spawned maintenant can communicate with it. The `--mcp-stdio` flag is independent of `MAINTENANT_MCP`. It must be the first argument, and in this mode the logs go to stderr so that stdout carries only the protocol.
+No authentication. The instance serves MCP on `mcp.sock`, next to its database, with mode `0600`: only the user maintenant runs as (or root) can connect. The socket and the `--mcp-stdio` flag are independent of `MAINTENANT_MCP`. It must be the first argument, and in this mode the logs go to stderr so that stdout carries only the protocol.
 
 ### Streamable HTTP (OAuth2)
 
@@ -124,7 +139,7 @@ Loopback callbacks (`localhost` / `127.0.0.1` / `::1`, any port or path, `http` 
 - Claude Desktop: `http://localhost:33418/oauth/callback` (loopback, accepted automatically)
 - Claude mobile: see Claude documentation for the current callback host.
 
-The `--mcp-stdio` flag is independent of these variables: it runs the MCP server over stdin/stdout and exits when the connection closes.
+The `--mcp-stdio` flag is independent of these variables: it relays stdin and stdout to the running instance and exits when either side closes.
 
 ### Generating Credentials
 
