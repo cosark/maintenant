@@ -26,7 +26,7 @@ No throwaway script is ever required to deploy.
 | `opensvc/`                          | service templates, one per replication mode                                                                                         |
 | `split-brain.md`                    | the manual resolution of a DRBD split brain in `sqlite/drbd`, whose side to keep `lab status` names                                  |
 | `lab/`                              | bench topology, provisioning, `lab` CLI, scenarios and probes                                                                       |
-| `lab/lab`                           | the single entry point: `up`, `down`, `status`, `chaos`, `heal`, `run-all`, `giveback`                                              |
+| `lab/lab`                           | the single entry point: `up`, `down`, `status`, `chaos`, `heal`, `run-all` (one scenario with `--scenario <n>`), `giveback`           |
 | `lab/scenarios/`                    | the twelve scenarios of the bench plan, plus the mode-specific ones                                                                 |
 | `lab/probes/`                       | the measurement probes (availability, writes, observer), in Go                                                                      |
 | `reports/`                          | versioned run reports, one directory per run                                                                                        |
@@ -104,6 +104,28 @@ Two things never happen quietly. A fence that cannot prove the peer went down ex
 non-zero. om3 only logs that and starts the service anyway, so the callout also leaves `/var/lib/maintenant-fence/failed-<node>` behind, and `maintenant-fence --guard`, the blocking pre-start of `ip#0`, refuses to start the service while such a file exists (FR-024). A later successful fence of the same node removes it; otherwise the operator makes sure the node is down, removes the file and starts the service. And the role exercises the mechanism at deploy time with the check command: a cluster should not discover during an incident that it was never able to fence.
 
 `DEFAULT.stonith=true` is the other half, and it lives on the service rather than the node: a failover service without it never calls the callout at all. The service templates carry it.
+
+## The loss window of `synchronous=NORMAL` in `sqlite/drbd`
+
+The role refuses `sqlite/drbd` below `MAINTENANT_SQLITE_SYNCHRONOUS=FULL` (FR-017). At `NORMAL`, SQLite acknowledges a commit before the write-ahead log reaches the disk, so DRBD never sees it when the node dies, and the survivor starts without it.
+
+Measured on 2026-10-18 by playing scenario 2 (`virsh destroy` of the active node) 20 times in `sqlite/drbd`, with `NORMAL` set by hand in `app#0.environment` and the writes probe at one record every 100 ms:
+
+| | per repetition, over 20 |
+|---|---|
+| Acknowledged writes lost | 3 to 7 (7 in 12 runs, 6 in 7 runs, 3 in one) |
+| Loss window | 0.3 to 0.7 s, 0.7 s in 12 runs |
+| Service back on the address | 22.6 to 26.0 s |
+
+The window is the time the lost writes cover, at 100 ms per write, read from the probe's journal. Every repetition lost writes, and they were always the last ones acknowledged before the crash, contiguous, never an older or isolated record. Nothing else failed. The same scenario at `FULL` loses nothing (SC-002). The figure holds for this write rate on the bench machines; the bench does not show what bounds it, so a heavier load or slower storage can widen it.
+
+To replay the measurement, set `NORMAL` in the service environment and restart the application, then run `lab run-all --scenario 2 --repeat 20`. The role's guard does not allow it, so it is changed outside Ansible, and set back to `FULL` afterwards:
+
+```sh
+v=$(sudo om maintenant config get --kw app#0.environment | sed s/SYNCHRONOUS=FULL/SYNCHRONOUS=NORMAL/)
+sudo om maintenant config update --set "app#0.environment=$v"
+sudo om maintenant restart --rid app#0
+```
 
 ## The probes
 
