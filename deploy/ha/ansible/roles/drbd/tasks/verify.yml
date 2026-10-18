@@ -12,18 +12,18 @@
   ansible.builtin.assert:
     that: drbd_running.stdout is search('(?m)^\s*' ~ (item.split() | join('\s+')) ~ ';')
     fail_msg: "{{ inventory_hostname }} does not run {{ drbd_resource }} with {{ item }}"
-  loop:
-    - auto-promote no
-    - quorum majority
-    - on-no-quorum suspend-io
-    - protocol C
-    - allow-two-primaries no
-    - after-sb-0pri disconnect
-    - after-sb-1pri disconnect
-    - after-sb-2pri disconnect
-    - rr-conflict disconnect
-    - disk-flushes yes
-    - md-flushes yes
+  loop: "{{ drbd_safe_settings + ([] if drbd_diskless else ['disk-flushes yes', 'md-flushes yes']) }}"
+  vars:
+    drbd_safe_settings:
+      - auto-promote no
+      - quorum majority
+      - on-no-quorum suspend-io
+      - protocol C
+      - allow-two-primaries no
+      - after-sb-0pri disconnect
+      - after-sb-1pri disconnect
+      - after-sb-2pri disconnect
+      - rr-conflict disconnect
 
 - name: Read the quorum this node holds
   ansible.builtin.command:

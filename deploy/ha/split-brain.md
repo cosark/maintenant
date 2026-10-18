@@ -85,6 +85,13 @@ On the node to keep, only if its connection is still `StandAlone`:
 drbdadm connect maintenant
 ```
 
+On the arbitrator too: it also saw the split and left its connection to the discarded
+node `StandAlone`, and that node never counts its quorum vote again until it reconnects:
+
+```sh
+drbdadm adjust maintenant
+```
+
 DRBD resynchronises the discarded node from the kept one. Wait until both disks are
 `UpToDate` and the connection is `Connected`:
 

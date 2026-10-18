@@ -14,6 +14,16 @@
   run_once: true
   listen: Hand the service to the orchestrator
 
+# om3 never starts an instance whose resources are not flagged provisioned; Ansible prepared them.
+- name: Flag the resources as provisioned
+  ansible.builtin.command:
+    argv: [om, "{{ opensvc_service_name }}", instance, provision, --state-only]
+  changed_when: true
+  run_once: true
+  delegate_to: "{{ item }}"
+  loop: "{{ ansible_play_hosts }}"
+  listen: Hand the service to the orchestrator
+
 - name: Unfreeze the service
   ansible.builtin.command:
     argv: [om, "{{ opensvc_service_name }}", unfreeze]

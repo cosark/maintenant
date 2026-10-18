@@ -507,12 +507,18 @@ run_all_versions() {
 	opensvc_version=""
 	kernel_version=""
 	postgres_version=""
+	drbd_version=""
 	if [ -n "$node" ]; then
 		opensvc_version=$(ssh_to "$node" "$OM --version" 2>/dev/null | head -n 1) || opensvc_version=""
 		kernel_version=$(ssh_to "$node" "uname -r" 2>/dev/null) || kernel_version=""
 		case "$(current_mode)" in
 		postgres/*)
 			postgres_version=$(ssh_to "$node" "$PG_STATE" 2>/dev/null | jq -r '.package_version // empty') || postgres_version=""
+			;;
+		esac
+		case "$(current_mode)" in
+		*/drbd)
+			drbd_version=$(ssh_to "$node" "sudo -n drbdadm --version" 2>/dev/null | sed -n 's/^DRBD_KERNEL_VERSION=//p') || drbd_version=""
 			;;
 		esac
 	fi
@@ -525,12 +531,13 @@ run_all_versions() {
 		--arg opensvc "$opensvc_version" \
 		--arg kernel "$kernel_version" \
 		--arg postgres "$postgres_version" \
+		--arg drbd "$drbd_version" \
 		--arg lab_commit "$lab_commit" \
 		'{
 			maintenant: (if $maintenant == "" then null else $maintenant end),
 			edition: (if $edition == "" then null else $edition end),
 			opensvc: (if $opensvc == "" then null else $opensvc end),
-			drbd: null,
+			drbd: (if $drbd == "" then null else $drbd end),
 			postgres: (if $postgres == "" then null else $postgres end),
 			kernel: (if $kernel == "" then null else $kernel end),
 			lab_commit: (if $lab_commit == "" then null else $lab_commit end)
@@ -1590,6 +1597,7 @@ scenario_env() {
 		awk -v a="$LAB_ACTIVE_ADDRESS/" '$0 ~ " inet "a {print $2; exit}')
 	LAB_SSH_ACTIVE="ssh $SSH_BATCH_OPTS $(ssh_target "$active")"
 	LAB_SSH_PASSIVE="ssh $SSH_BATCH_OPTS $(ssh_target "$passive")"
+	LAB_SSH_ARBITRATOR="ssh $SSH_BATCH_OPTS $(ssh_target "$arbitrator")"
 	LAB_CLI="$LAB_DIR/lab"
 	LAB_RUN_DIR="$STATE_DIR"
 	mkdir -p "$LAB_RUN_DIR"
@@ -1598,7 +1606,7 @@ scenario_env() {
 		LAB_ACTIVE LAB_PASSIVE LAB_ACTIVE_ADDRESS LAB_PASSIVE_ADDRESS \
 		LAB_ARBITRATOR_ADDRESS LAB_MEASUREMENT_ADDRESS \
 		LAB_ACTIVE_DOMAIN LAB_PASSIVE_DOMAIN LAB_STATE_DIR LAB_INTERCONNECT \
-		LAB_SSH_ACTIVE LAB_SSH_PASSIVE LAB_CLI LAB_RUN_DIR
+		LAB_SSH_ACTIVE LAB_SSH_PASSIVE LAB_SSH_ARBITRATOR LAB_CLI LAB_RUN_DIR
 }
 
 shell_quote() {

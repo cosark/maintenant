@@ -48,6 +48,7 @@ repair:
     # deploy/ha/split-brain.md, step 5 then step 6.
     $LAB_SSH_PASSIVE "sudo -n sh -c 'drbdadm secondary maintenant && drbdadm disconnect maintenant && drbdadm connect --discard-my-data maintenant'"
     $LAB_SSH_ACTIVE "sudo -n drbdadm adjust maintenant"
+    $LAB_SSH_ARBITRATOR "sudo -n drbdadm adjust maintenant"
     tries=0
     until $LAB_SSH_PASSIVE "sudo -n drbdsetup status --json maintenant" | jq -e '.[0] | .devices[0]["disk-state"] == "UpToDate"
       and all(.connections[]; .["connection-state"] == "Connected")' >/dev/null; do

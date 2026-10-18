@@ -19,6 +19,8 @@ resource {{ drbd_resource }} {
 	disk {
 		disk-flushes yes;
 		md-flushes yes;
+		# The default 250 KiB/s floor under application writes outlasts the bench's return to green.
+		c-min-rate 20M;
 	}
 
 	volume 0 {

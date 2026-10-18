@@ -57,7 +57,7 @@
 
 - name: Create the file system the service mounts
   ansible.builtin.command:
-    argv: [mkfs.ext4, -q, -L, maintenant, "{{ drbd_device }}"]
+    argv: [mkfs.ext4, -q, -E, "lazy_itable_init=0,lazy_journal_init=0", -L, maintenant, "{{ drbd_device }}"]
   when: drbd_seeded is changed
   changed_when: true
 

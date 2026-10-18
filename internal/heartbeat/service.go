@@ -263,7 +263,7 @@ func (s *Service) RecordPing(ctx context.Context, token string, sourceIP, httpMe
 	}
 	pingID, err := s.store.InsertPing(ctx, ping)
 	if err != nil {
-		s.logger.Error("insert ping", "heartbeat_id", h.ID, "error", err)
+		return nil, "", fmt.Errorf("insert ping: %w", err)
 	}
 
 	// State transition
@@ -376,7 +376,7 @@ func (s *Service) ProcessStartPing(ctx context.Context, token string, sourceIP, 
 		Timestamp:   now,
 	}
 	if _, err := s.store.InsertPing(ctx, ping); err != nil {
-		s.logger.Error("insert start ping", "heartbeat_id", h.ID, "error", err)
+		return nil, fmt.Errorf("insert start ping: %w", err)
 	}
 
 	// Close any in-progress execution as timeout
@@ -462,7 +462,7 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 		Timestamp:   now,
 	}
 	if _, err := s.store.InsertPing(ctx, ping); err != nil {
-		s.logger.Error("insert exit code ping", "heartbeat_id", h.ID, "error", err)
+		return nil, fmt.Errorf("insert exit code ping: %w", err)
 	}
 
 	// Reset deadline (job did run)

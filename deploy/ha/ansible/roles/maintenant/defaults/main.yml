@@ -10,7 +10,7 @@ maintenant_build_image: golang:1.26-alpine
 # moves between the nodes. Nothing of the deployment's identity is allowed to
 # sit outside it (FR-035).
 maintenant_state_dir: /var/lib/maintenant
-maintenant_tls_dir: "{{ maintenant_state_dir }}/tls"
+maintenant_tls_dir: /etc/maintenant/tls
 
 maintenant_http_port: "{{ ha_service_http_port | default(8080) }}"
 maintenant_grpc_port: 8443

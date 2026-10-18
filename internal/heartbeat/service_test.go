@@ -30,8 +30,9 @@ type mockStore struct {
 	pings      []*HeartbeatPing
 	executions []*HeartbeatExecution
 	// overdue is injected per-test for checkDeadlines scenarios
-	overdue    []*Heartbeat
-	openPauses map[string]bool
+	overdue       []*Heartbeat
+	openPauses    map[string]bool
+	insertPingErr error
 }
 
 func newMockStore() *mockStore {
@@ -192,6 +193,9 @@ func (m *mockStore) CountActiveHeartbeats(_ context.Context) (int, error) {
 func (m *mockStore) InsertPing(_ context.Context, p *HeartbeatPing) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.insertPingErr != nil {
+		return "", m.insertPingErr
+	}
 	p.ID = m.nextStrID()
 	cp := *p
 	m.pings = append(m.pings, &cp)
@@ -630,6 +634,35 @@ func TestService_ProcessPing_UpButAlerting_EmitsRecoveryAndResetsAlertState(t *t
 	assert.Equal(t, AlertNormal, result.AlertState)
 	require.Len(t, alertCalls, 1, "a stale alerting state must be cleared by the next successful ping")
 	assert.Equal(t, "recovery", alertCalls[0])
+}
+
+func TestService_PingNotStored_IsNotAcknowledged(t *testing.T) {
+	cases := map[string]func(*Service) error{
+		"ping": func(svc *Service) error {
+			_, _, err := svc.RecordPing(context.Background(), "uuid-full", "127.0.0.1", "GET", nil, nil)
+			return err
+		},
+		"start": func(svc *Service) error {
+			_, err := svc.ProcessStartPing(context.Background(), "uuid-full", "127.0.0.1", "GET")
+			return err
+		},
+		"exit code": func(svc *Service) error {
+			_, err := svc.ProcessExitCodePing(context.Background(), "uuid-full", 0, "127.0.0.1", "GET", nil)
+			return err
+		},
+	}
+	for name, ping := range cases {
+		t.Run(name, func(t *testing.T) {
+			store := newMockStore()
+			store.insertPingErr = errors.New("database or disk is full")
+			svc := newService(store, &mockLicense{canCreate: true})
+			seedHeartbeat(store, "uuid-full", StatusNew, AlertNormal)
+
+			require.ErrorIs(t, ping(svc), store.insertPingErr)
+			assert.Equal(t, StatusNew, store.heartbeats["uuid-full"].Status)
+			assert.Nil(t, store.heartbeats["uuid-full"].LastPingAt)
+		})
+	}
 }
 
 func TestService_ProcessPing_UnknownUUID(t *testing.T) {
