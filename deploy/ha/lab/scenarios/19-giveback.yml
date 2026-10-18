@@ -1,5 +1,5 @@
 ---
-# Scenario 19, specific to postgres/streaming. Numbers 1 to 12 belong to the
+# Scenario 19, specific to the replicated modes. Numbers 1 to 12 belong to the
 # bench plan; the allocation of the others is fixed in README.md.
 id: 19
 slug: giveback
@@ -14,19 +14,30 @@ repair:
   'on': host
   command: |
     set -eu
-    $LAB_SSH_ACTIVE "sudo -n systemctl stop maintenant-pg-watch.service 'postgresql@*.service'"
+    case "$LAB_MODE" in
+    postgres/streaming)
+      $LAB_SSH_ACTIVE "sudo -n systemctl stop maintenant-pg-watch.service 'postgresql@*.service'"
+      refused="$LAB_ACTIVE is not a caught-up standby"
+      restore="sudo -n systemctl start maintenant-pg-watch.service"
+      ;;
+    sqlite/drbd)
+      $LAB_SSH_ACTIVE "sudo -n drbdadm disconnect maintenant"
+      refused="the volume on $LAB_ACTIVE is not an up-to-date copy of $LAB_PASSIVE"
+      restore="sudo -n drbdadm adjust maintenant"
+      ;;
+    esac
     if refusal=$("$LAB_CLI" giveback 2>&1); then
-      echo "giveback was accepted while the copy on $LAB_ACTIVE was stopped" >&2
+      echo "giveback was accepted while the copy on $LAB_ACTIVE was cut off" >&2
       exit 1
     fi
     case "$refusal" in
-    *"$LAB_ACTIVE is not a caught-up standby"*) ;;
+    *"$refused"*) ;;
     *)
-      printf 'giveback was refused for another reason than the stopped copy: %s\n' "$refusal" >&2
+      printf 'giveback was refused for another reason than the cut-off copy: %s\n' "$refusal" >&2
       exit 1
       ;;
     esac
-    $LAB_SSH_ACTIVE "sudo -n systemctl start maintenant-pg-watch.service"
+    $LAB_SSH_ACTIVE "$restore"
     tries=0
     until "$LAB_CLI" giveback; do
       tries=$((tries + 1))
@@ -41,9 +52,13 @@ verify:
   command: |
     set -eu
     curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" | jq -e '.storage.connected == true' >/dev/null
+    case "$LAB_MODE" in
+    postgres/streaming) role="sudo -n /usr/local/sbin/maintenant-pg-state" primary='.role == "primary"' ;;
+    sqlite/drbd) role="sudo -n drbdsetup status --json maintenant" primary='.[0].role == "Primary"' ;;
+    esac
     primaries=0
     for node in "$LAB_SSH_ACTIVE" "$LAB_SSH_PASSIVE"; do
-      if $node sudo -n /usr/local/sbin/maintenant-pg-state 2>/dev/null | jq -e '.role == "primary"' >/dev/null; then
+      if $node "$role" 2>/dev/null | jq -e "$primary" >/dev/null; then
         primaries=$((primaries + 1))
       fi
     done
@@ -66,8 +81,13 @@ modes:
       and the other node is rebuilt as its standby by pg_rewind with nothing to rewind. No
       acknowledged write is lost; exactly one node holds the service throughout.'
   sqlite/drbd:
-    applicable: false
-    reason: the DRBD giveback belongs to scenario 21 and its own phase
+    applicable: true
+    expected: 'The service is switched away from the preferred node, whose volume stays
+      connected as Secondary. lab giveback is refused while the volume on the preferred node
+      is disconnected, and refused again until it is UpToDate, Connected to the holder and has
+      nothing out of sync. Once it is, the giveback stops the application, unmounts and
+      demotes the volume on the holder, then promotes and mounts it on the preferred node. No
+      acknowledged write is lost; exactly one node is Primary throughout.'
   postgres/drbd:
     applicable: false
-    reason: the DRBD giveback belongs to scenario 21 and its own phase
+    reason: no service template for this mode yet

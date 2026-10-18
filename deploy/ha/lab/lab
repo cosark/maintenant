@@ -56,6 +56,8 @@ RUN_ALL_GREEN_TIMEOUT=300
 RUN_ALL_GREEN_INTERVAL=5
 RUN_ALL_VERIFY_TIMEOUT=180
 RUN_ALL_VERIFY_INTERVAL=2
+# The read-back pages through every ping since lab up, on a cache the failover left cold.
+WRITES_VERIFY_TIMEOUT=30s
 RUN_ALL_ABORTED=0
 AGENTS_RECONNECT_MAX_S=90
 PROBE_MEASURES='["rto_ms", "writes", "telemetry_gap_s", "telemetry_samples_lost", "alerts_induced", "agents"]'
@@ -256,6 +258,11 @@ node_status() {
 	fi
 	if ssh_to "$name" "$OM_DAEMON_STATUS" >/dev/null 2>&1; then
 		om="up"
+		# A frozen instance never fails over, so a bench left frozen is not green.
+		if ssh_to "$name" "$OM ${LAB_SERVICE_NAME:-maintenant} instance ls -o json" 2>/dev/null |
+			jq -e --arg n "$name" 'any(.items[]; .meta.node == $n and ((.data.status.frozen_at // "0001") | startswith("0001") | not))' >/dev/null 2>&1; then
+			om="frozen"
+		fi
 	elif ssh_to "$name" "command -v om" >/dev/null 2>&1; then
 		om="down"
 	else
@@ -1304,7 +1311,7 @@ $ver_out"
 				elif [ -z "$base_url" ] || [ -z "$heartbeat" ]; then
 					writes_error='"PROBE_BASE_URL or PROBE_HEARTBEAT could not be read on the measurement host"'
 				else
-					writes_cmd="sudo -n $PROBE_BIN_DIR/lab-probe-writes -mode verify -base $(shell_quote "$base_url") -heartbeat $(shell_quote "$heartbeat") -journal $(shell_quote "$state_dir/writes.ndjson") -from $(shell_quote "$t0") -to $(shell_quote "$t1_window")"
+					writes_cmd="sudo -n $PROBE_BIN_DIR/lab-probe-writes -mode verify -timeout $WRITES_VERIFY_TIMEOUT -base $(shell_quote "$base_url") -heartbeat $(shell_quote "$heartbeat") -journal $(shell_quote "$state_dir/writes.ndjson") -from $(shell_quote "$t0") -to $(shell_quote "$t1_window")"
 					writes_out=$(ssh_to "$probe_host" "$writes_cmd" 2>"$TMP/writes-$number.err") || true
 					writes_json=$(probe_json "$writes_out")
 					if [ "$writes_json" = null ]; then
@@ -2003,6 +2010,18 @@ postgres_copy_current() {
 	done
 }
 
+# The preferred node's volume is up to date when it is a connected Secondary with
+# nothing left to resynchronise from the holder.
+drbd_copy_current() {
+	preferred=$1
+	holder=$2
+	jq -e --arg p "$preferred" --arg h "$holder" '.nodes[] | select(.name == $p) | .drbd
+		| .role == "Secondary" and .disk == "UpToDate"
+		and any(.connections[]; .peer == $h and .state == "Connected" and .peer_disk == "UpToDate" and .out_of_sync_kib == 0)' \
+		"$TMP/status-giveback.json" >/dev/null ||
+		die "giveback refused: the volume on $preferred is not an up-to-date copy of $holder ($(jq -c --arg p "$preferred" '.nodes[] | select(.name == $p) | .drbd' "$TMP/status-giveback.json"))" 1
+}
+
 cmd_giveback() {
 	[ $# -eq 0 ] || die "giveback takes no option" 2
 	need ansible-inventory
@@ -2021,6 +2040,7 @@ cmd_giveback() {
 	case "$mode" in
 	ip-only) info "ip-only keeps no replicated data: nothing to compare before the giveback" ;;
 	postgres/streaming) postgres_copy_current "$preferred" "$holder" ;;
+	sqlite/drbd) drbd_copy_current "$preferred" "$holder" ;;
 	*) die "giveback is not implemented for mode $mode yet" 3 ;;
 	esac
 

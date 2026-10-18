@@ -54,7 +54,7 @@ is fixed here so that later phases cannot collide:
 | 16 | Former primary returns and is rebuilt as standby | `postgres/streaming` |
 | 17 | Write-ahead log retention exhausted | `postgres/streaming` |
 | 18 | Forced promotion (the variant of scenario 10) | `postgres/streaming` |
-| 19 | Full giveback to the preferred node | `postgres/streaming` |
+| 19 | Full giveback to the preferred node | `postgres/streaming`, `sqlite/drbd` |
 | 20 | SQLite journal recovery after crash | `sqlite/drbd` |
 | 21 | Volume resynchronisation when the node returns | `sqlite/drbd` |
 | 22 | Storage split-brain and its manual resolution | `sqlite/drbd` |
@@ -207,7 +207,7 @@ Their numbers, names and scope are fixed here.
 | 16 | Former primary returns and is rebuilt | `postgres/streaming` | The node that was overtaken comes back. It is never restarted as a primary; it is rebuilt as a standby without intervention. |
 | 17 | Write-ahead log retention exhausted | `postgres/streaming` | Retention for an absent standby is bounded. Crossing the bound triggers a documented full rebuild, never a failure of the primary. |
 | 18 | Forced promotion | `postgres/streaming` | Scenario 10 with the local restart made impossible: the restarts run out, the service moves, the standby is promoted, and exactly one primary is established before the application starts. |
-| 19 | Full giveback | `postgres/streaming` | Return to nominal on operator request only, refused while the preferred node's copy is not up to date. |
+| 19 | Full giveback | `postgres/streaming`, `sqlite/drbd` | Return to nominal on operator request only, refused while the preferred node's copy is not up to date. |
 | 20 | SQLite journal recovery after crash | `sqlite/drbd` | The journal left behind by an abrupt loss is recovered on the surviving node before the application is allowed to start. |
 | 21 | Volume resynchronisation on node return | `sqlite/drbd` | The returning node resynchronises from the survivor without overwriting an acknowledged write, and does not restart the service on its own. |
 | 22 | Storage split-brain and its manual resolution | `sqlite/drbd` | Automatic resolution is forbidden: it throws writes away. The bench must show the refusal to promote, name the side to keep, and document the manual procedure. |
@@ -299,6 +299,11 @@ checked down to the rebuild of the former primary and the end of the loss window
 | **Repair** | Stop the preferred node's copy and check `lab giveback` is refused because that node is not a caught-up standby; start it again and retry `lab giveback` until it is accepted. |
 | **Expected** | The giveback is refused while the preferred node is not a caught-up standby, streaming, synchronous and zero bytes behind. Once it is, the service goes back, the other node is rebuilt as its standby, and no acknowledged write is lost. |
 | **Measures** | `rto_ms`, `writes`, `primary_count`, `former_primary_rebuild`. |
+
+In `sqlite/drbd` the repair disconnects the preferred node's volume instead of stopping its
+standby, and reconnects it with `drbdadm adjust`. The giveback is refused until that volume is
+a Secondary, `UpToDate`, `Connected` to the holder with nothing out of sync; the service then
+stops on the holder, which demotes the volume, and starts on the preferred node.
 
 ## DRBD scenarios
 
