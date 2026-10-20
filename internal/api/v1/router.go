@@ -149,6 +149,8 @@ type HandlerDeps struct {
 	AllowPrivateWebhooks bool // dev only: skip HTTPS + SSRF check on webhook URLs
 	StatusURL            string
 	TrustedProxies       []netip.Prefix
+	PingIPLimiter        *ratelimit.Limiter
+	PingTokenLimiter     *ratelimit.Limiter
 	DemoMode             bool
 }
 
@@ -271,6 +273,7 @@ func NewRouter(d HandlerDeps) *Router {
 		r.mux.HandleFunc("DELETE /api/v1/heartbeats/{id}", hh.HandleDelete)
 		r.mux.HandleFunc("POST /api/v1/heartbeats/{id}/pause", hh.HandlePause)
 		r.mux.HandleFunc("POST /api/v1/heartbeats/{id}/resume", hh.HandleResume)
+		r.mux.HandleFunc("POST /api/v1/heartbeats/{id}/rotate-token", hh.HandleRotateToken)
 		r.mux.HandleFunc("GET /api/v1/heartbeats/{id}/executions", hh.HandleListExecutions)
 		r.mux.HandleFunc("GET /api/v1/heartbeats/{id}/pings", hh.HandleListPings)
 

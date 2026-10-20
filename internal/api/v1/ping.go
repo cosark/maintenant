@@ -127,3 +127,6 @@ func (h *PingHandler) HandleExitCodePing(w http.ResponseWriter, r *http.Request)
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "exit_code": exitCode})
 }
+
+// SetLimiters sets the per-address bucket for unknown tokens and the per-token bucket for known ones.
+func (h *PingHandler) SetLimiters(ipRL, tokenRL *ratelimit.Limiter) { panic("not implemented") }

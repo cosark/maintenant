@@ -767,3 +767,8 @@ func validateCreateInput(input CreateHeartbeatInput) error {
 	}
 	return nil
 }
+
+// RotatePingToken gives a heartbeat a new ping token and returns the updated heartbeat.
+func (s *Service) RotatePingToken(ctx context.Context, id string) (*Heartbeat, error) {
+	panic("not implemented")
+}

@@ -589,3 +589,13 @@ func scanExecutionSingle(row *sql.Row) (*heartbeat.HeartbeatExecution, error) {
 
 	return &e, nil
 }
+
+// GetHeartbeatByPingToken returns the heartbeat answering to a ping token, or nil when none does.
+func (s *HeartbeatStore) GetHeartbeatByPingToken(ctx context.Context, token string) (*heartbeat.Heartbeat, error) {
+	panic("not implemented")
+}
+
+// RotatePingToken replaces the ping token of a heartbeat.
+func (s *HeartbeatStore) RotatePingToken(ctx context.Context, id, token string) error {
+	panic("not implemented")
+}

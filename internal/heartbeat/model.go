@@ -61,6 +61,7 @@ const (
 // token (a UUID), which doubles as the primary key.
 type Heartbeat struct {
 	ID                   string          `json:"id"`
+	PingToken            string          `json:"ping_token"`
 	Name                 string          `json:"name"`
 	Status               HeartbeatStatus `json:"status"`
 	AlertState           AlertState      `json:"alert_state"`

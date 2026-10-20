@@ -348,3 +348,8 @@ func enrichPings(pings []*heartbeat.HeartbeatPing, intervalSec, graceSec int, cr
 
 	return enriched
 }
+
+// HandleRotateToken handles POST /api/v1/heartbeats/{id}/rotate-token
+func (h *HeartbeatHandler) HandleRotateToken(w http.ResponseWriter, r *http.Request) {
+	panic("not implemented")
+}

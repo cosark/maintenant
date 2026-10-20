@@ -48,6 +48,7 @@ type Config struct {
 	// TrustedProxies lists the CIDRs and addresses whose forwarded headers are
 	// believed, comma-separated. Empty means no header is ever read.
 	TrustedProxies string
+	AllowedHosts   string
 
 	// CACertFile is a PEM bundle appended to the system roots, so endpoints and
 	// certificates signed by an internal PKI validate without disabling checks.
@@ -383,6 +384,7 @@ func ConfigFromEnv() Config {
 
 		CORSOrigins:    os.Getenv("MAINTENANT_CORS_ORIGINS"),
 		TrustedProxies: os.Getenv("MAINTENANT_TRUSTED_PROXIES"),
+		AllowedHosts:   os.Getenv("MAINTENANT_ALLOWED_HOSTS"),
 		CACertFile:     os.Getenv("MAINTENANT_CA_CERT"),
 
 		OrgName:   envOr("MAINTENANT_ORGANISATION_NAME", "Maintenant"),
@@ -508,3 +510,9 @@ func envDurationOr(key string, fallback time.Duration) time.Duration {
 	}
 	return fallback
 }
+
+// StatusHost returns the lowercase host name of MAINTENANT_STATUS_URL, or "" when it is unset.
+func (c Config) StatusHost() (string, error) { panic("not implemented") }
+
+// AllowedHostSet returns the host names the API and the dashboard answer to.
+func (c Config) AllowedHostSet() map[string]struct{} { panic("not implemented") }

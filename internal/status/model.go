@@ -86,8 +86,22 @@ type MonitorRef struct {
 	Type   string `json:"type"`
 	ID     string `json:"id"`
 	Name   string `json:"name,omitempty"`
+	Label  string `json:"label,omitempty"`
 	Status string `json:"status,omitempty"`
 }
+
+// PublicMonitor is what a public surface tells about a monitor: never its id or its target.
+type PublicMonitor struct {
+	Type   string `json:"type"`
+	Status string `json:"status,omitempty"`
+	Label  string `json:"label,omitempty"`
+}
+
+// PublicMonitors reduces monitor refs to their public form.
+func PublicMonitors(refs []MonitorRef) []PublicMonitor { panic("not implemented") }
+
+// ValidateMonitorLabel trims a public label and refuses one over 80 runes or holding a control character.
+func ValidateMonitorLabel(s string) (string, error) { panic("not implemented") }
 
 // Component is a public-facing representation of a monitored application or service.
 type Component struct {
