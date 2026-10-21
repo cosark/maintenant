@@ -103,6 +103,8 @@ type NotificationChannel struct {
 	// HasSecret is derived at scan time, never stored. It lets the interface show
 	// "token on file" without receiving the token.
 	HasSecret       bool      `json:"has_secret"`
+	HasHeaders      bool      `json:"has_headers"`
+	HasURLSecret    bool      `json:"has_url_secret"`
 	Enabled         bool      `json:"enabled"`
 	Health          string    `json:"health,omitempty"`
 	Suspended       bool      `json:"suspended"`
@@ -243,3 +245,9 @@ type SilenceStore interface {
 	CancelSilenceRule(ctx context.Context, id string) error
 	GetActiveSilenceRules(ctx context.Context) ([]*SilenceRule, error)
 }
+
+// Redact replaces header values by *** and cuts a platform webhook URL after its host, for every read surface.
+func (c *NotificationChannel) Redact() { panic("not implemented") }
+
+// ParseHeaders decodes a channel's headers field: empty means none; anything but a JSON object of strings is an error.
+func ParseHeaders(s string) (map[string]string, error) { panic("not implemented") }

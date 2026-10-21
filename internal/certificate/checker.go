@@ -43,6 +43,11 @@ type ChainCert struct {
 	NotAfter  time.Time
 }
 
+// CheckCertificateFrom checks a certificate on behalf of a monitor of the given source, which decides whether the probe guard applies.
+func CheckCertificateFrom(source CertSource, hostname string, port int, serverName string, timeout time.Duration) *CheckCertificateResult {
+	panic("not implemented")
+}
+
 // CheckCertificate performs a TLS handshake to the given hostname:port and extracts
 // certificate details including chain validation. A non-empty serverName is sent
 // as SNI and used for chain validation and hostname matching instead of hostname,

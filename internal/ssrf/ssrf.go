@@ -109,3 +109,12 @@ func NewHTTPClient(timeout time.Duration, allowPrivate bool) *http.Client {
 	}
 	return &http.Client{Timeout: timeout, Transport: transport}
 }
+
+// IsBlockedForProbe reports whether a label-declared monitor must not connect to ip: link-local, multicast or unspecified addresses.
+func IsBlockedForProbe(ip net.IP) bool { panic("not implemented") }
+
+// ProbeControl is the dial hook of label-declared monitors: it refuses the addresses IsBlockedForProbe rejects.
+func ProbeControl(network, address string, c syscall.RawConn) error { panic("not implemented") }
+
+// ProbeGuardDisabled reports whether MAINTENANT_LABEL_ENDPOINTS_ALLOW_LINK_LOCAL lifts the probe guard (tests only).
+func ProbeGuardDisabled() bool { panic("not implemented") }

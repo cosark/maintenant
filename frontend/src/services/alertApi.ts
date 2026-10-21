@@ -65,6 +65,8 @@ export interface NotificationChannel {
   headers: string
   config?: string
   has_secret?: boolean
+  has_headers?: boolean
+  has_url_secret?: boolean
   enabled: boolean
   health: string
   /** True when the running edition no longer opens this channel's type: it is kept but not delivered. */

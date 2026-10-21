@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/tls"
 	"net"
+	"syscall"
 	"time"
 )
 
@@ -34,4 +35,9 @@ func DialInspect(ctx context.Context, addr, serverName string, timeout time.Dura
 	state := tlsConn.ConnectionState()
 	_ = conn.Close()
 	return state, nil
+}
+
+// DialInspectControl is DialInspect with a dial-time control hook.
+func DialInspectControl(ctx context.Context, addr, serverName string, timeout time.Duration, control func(network, address string, c syscall.RawConn) error) (tls.ConnectionState, error) {
+	panic("not implemented")
 }
