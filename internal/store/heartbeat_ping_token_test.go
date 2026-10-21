@@ -5,10 +5,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
-	"log/slog"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -126,23 +122,8 @@ func TestHeartbeatStore_RotatePingTokenKeepsIDAndHistoryAndRefusesACollision(t *
 	assert.ErrorIs(t, err, heartbeat.ErrHeartbeatNotFound)
 }
 
-// openUnmigratedDB opens an empty database on the engine the suite runs against, without applying any migration.
-func openUnmigratedDB(t *testing.T) *DB {
-	t.Helper()
-	logger := testLogger()
-	if adminDSN := os.Getenv(testDatabaseURLEnv); adminDSN != "" {
-		db, err := OpenPostgres(context.Background(), createTestDatabase(t, adminDSN), logger)
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = db.Close() })
-		return db
-	}
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"), logger)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-	return db
-}
-
-// migrateTo brings db to exactly the given embedded migration, as a release of that day would have left it.
+// migrateTo steps a migrated db back to the given embedded migration through its down files, as a release of that day left it.
+// Migrating up from an empty file would not do: the SQLite conversions apply uuid_schema.sql, which is kept at the head.
 func migrateTo(t *testing.T, db *DB, version uint) {
 	t.Helper()
 	source, err := iofs.New(migrationFS, "migrations/"+db.dialect.String())
@@ -158,24 +139,13 @@ func migrateTo(t *testing.T, db *DB, version uint) {
 	m, err := migrate.NewWithInstance("iofs", source, db.dialect.String(), driver)
 	require.NoError(t, err)
 	require.NoError(t, m.Migrate(version))
-
-	if db.dialect != DialectSQLite {
-		return
-	}
-	ctx := context.Background()
-	logger := testLogger()
-	for _, convert := range []func(context.Context, *sql.DB, *slog.Logger) error{
-		convertToUUID, rebuildCertMonitorsForSNI, rebuildEndpointsForDegraded, rebuildEnrollmentTokensForHashing, rebuildEscalationDeliveriesStatusCheck,
-	} {
-		require.NoError(t, convert(ctx, db.db, logger))
-	}
 }
 
 // FR-011, US2 scenario 4, SC-002: a database written before the upgrade keeps every deployed ping URL working,
 // on SQLite as on PostgreSQL, because the migration gives each existing heartbeat its id as token.
 func TestMigration_ExistingHeartbeatsGetTheirIDAsPingToken(t *testing.T) {
 	ctx := context.Background()
-	db := openUnmigratedDB(t)
+	db := openTestDB(t)
 	migrateTo(t, db, schemaBeforePingToken)
 
 	now := time.Now().Unix()
@@ -197,9 +167,6 @@ func TestMigration_ExistingHeartbeatsGetTheirIDAsPingToken(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, Migrate(ctx, db, testLogger()), "the upgrade needs no manual step")
-	wctx, cancel := context.WithCancel(ctx)
-	db.StartWriter(wctx)
-	t.Cleanup(cancel)
 	hs := NewHeartbeatStore(db)
 
 	comps, err := NewStatusComponentStore(db).ListComponents(ctx)
