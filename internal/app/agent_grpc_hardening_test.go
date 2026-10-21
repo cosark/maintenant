@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -65,14 +66,17 @@ func multihostServer(t *testing.T, cfg *Config, logger *slog.Logger) (*App, func
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- a.Start(ctx) }()
+	var once sync.Once
 	stop := func() {
-		cancel()
-		select {
-		case err := <-done:
-			assert.NoError(t, err)
-		case <-time.After(15 * time.Second):
-			t.Error("Start() did not return after context cancellation")
-		}
+		once.Do(func() {
+			cancel()
+			select {
+			case err := <-done:
+				assert.NoError(t, err)
+			case <-time.After(15 * time.Second):
+				t.Error("Start() did not return after context cancellation")
+			}
+		})
 	}
 	t.Cleanup(stop)
 
