@@ -22,6 +22,14 @@ import (
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+const (
+	logLineLimit = 4096
+	logBodyLimit = 1 << 20
+)
+
+// frameLogs prefixes container log lines with the untrusted-content warning and caps each line and the whole body.
+func frameLogs(lines []string) string { panic("not implemented") }
+
 func registerReadTools(server *gomcp.Server, svc *Services) {
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_containers",

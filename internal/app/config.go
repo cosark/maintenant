@@ -172,6 +172,8 @@ type MCPConfig struct {
 	// AllowUnauthenticated is the explicit opt-out for serving /mcp with no
 	// OAuth at all; without it, MCP without credentials refuses to listen.
 	AllowUnauthenticated bool
+	ReadOnly             bool
+	Socket               bool
 }
 
 // ErrMCPUnauthenticated refuses to expose an MCP server that answers to anyone.
@@ -384,6 +386,8 @@ func ConfigFromEnv() Config {
 			ClientSecret:         os.Getenv("MAINTENANT_MCP_CLIENT_SECRET"),
 			AllowedRedirectURIs:  os.Getenv("MAINTENANT_MCP_ALLOWED_REDIRECT_URIS"),
 			AllowUnauthenticated: parseTruthy(os.Getenv("MAINTENANT_MCP_ALLOW_UNAUTHENTICATED")),
+			ReadOnly:             parseTruthy(os.Getenv("MAINTENANT_MCP_READ_ONLY")),
+			Socket:               parseTruthy(os.Getenv("MAINTENANT_MCP_SOCKET")),
 		},
 
 		CORSOrigins:    os.Getenv("MAINTENANT_CORS_ORIGINS"),

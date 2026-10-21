@@ -129,6 +129,7 @@ type Services struct {
 	Version  string
 	Logger   *slog.Logger
 	DemoMode bool
+	ReadOnly bool
 }
 
 func (s *Services) logger() *slog.Logger {
