@@ -191,7 +191,7 @@ The status page is a responsive Vue SPA with live SSE updates. It can be embedde
 
 ### `/status/events`
 
-The stream carries these events. They are also sent on the admin stream `/api/v1/containers/events`, which is how `/status-admin` stays current.
+As soon as a client connects, the stream sends its headers and a `: ping` comment, so a proxy sees it open before the first event. The stream carries these events. They are also sent on the admin stream `/api/v1/containers/events`, which is how `/status-admin` stays current.
 
 | Event | Payload | Sent when |
 |-------|---------|-----------|
@@ -383,8 +383,9 @@ Subscriptions are open only when both conditions hold, and the page reports the 
 | `MAINTENANT_SMTP_USERNAME` | — | Login for AUTH PLAIN. Authentication is skipped when empty. |
 | `MAINTENANT_SMTP_PASSWORD` | — | Password for that login. |
 | `MAINTENANT_SMTP_FROM` | `maintenant@localhost` | Sender address. |
+| `MAINTENANT_SMTP_ALLOW_PLAINTEXT` | `false` | Lets a server without STARTTLS receive mail in clear. Logged as a warning at startup. |
 
-The same server sends the emails of the email alert channel. Port 465 uses implicit TLS. On any other port, maintenant upgrades the connection with STARTTLS whenever the server offers it, and a send fails if the server offers STARTTLS but the negotiation does not succeed. A server that does not offer STARTTLS is used without encryption, and the client then refuses to send credentials to it unless it is `localhost`. Any send gives up after 30 seconds. Subjects are MIME-encoded, so a title with accents or other non-ASCII characters arrives intact. The SMTP tab of `/status-admin` shows whether SMTP is configured and sends a test email (`POST /api/v1/status/smtp/test` with `{"to": "you@example.com"}`, from Personal; `400 not_configured` without `MAINTENANT_SMTP_HOST`, `502 smtp_failed` when the server refuses); the Subscribers tab warns when SMTP is missing.
+The same server sends the emails of the email alert channel. Port 465 uses implicit TLS. On any other port, maintenant requires STARTTLS, and a send fails if the negotiation does not succeed. A server that does not offer STARTTLS gets nothing and the send fails, unless `MAINTENANT_SMTP_ALLOW_PLAINTEXT=true`: the mail then goes without encryption, and the client still refuses to send credentials unless the server is `localhost`. Any send gives up after 30 seconds. Subjects are MIME-encoded, so a title with accents or other non-ASCII characters arrives intact. The SMTP tab of `/status-admin` shows whether SMTP is configured and sends a test email (`POST /api/v1/status/smtp/test` with `{"to": "you@example.com"}`, from Personal; `400 not_configured` without `MAINTENANT_SMTP_HOST`, `502 smtp_failed` when the server refuses); the Subscribers tab warns when SMTP is missing.
 
 ```bash
 # List subscribers (emails are masked)
@@ -404,7 +405,7 @@ POST /status/subscribe
 3. Opening the link (`GET /status/confirm?token=…`) confirms the subscription. Unconfirmed subscriptions older than 24 hours are purged daily.
 4. Every notification ends with a personal unsubscribe link (`GET /status/unsubscribe?token=…`). Unsubscribing always works, even when subscriptions are closed.
 
-The answer to `POST /status/subscribe` is the same for a new address, a pending one and a confirmed one, so nobody can use the form to find out who is subscribed. Any other `Content-Type` answers `415 unsupported_media_type`. A pending address receives a fresh link and the previous one stops working; a confirmed address receives nothing. A failed email is only written to the log.
+The answer to `POST /status/subscribe` is the same for a new address, a pending one and a confirmed one, so nobody can use the form to find out who is subscribed. Any other `Content-Type` answers `415 unsupported_media_type`. A pending address asked for less than 15 minutes ago receives nothing and its link keeps working; after 15 minutes it receives a fresh link and the previous one stops working. A confirmed address receives nothing. At most 100 confirmation emails are sent per hour: past that, requests get the same answer, no email goes out until the next hour, and a single warning is logged for that hour. A failed email is only written to the log.
 
 | Status | Code | Reason |
 |--------|------|--------|

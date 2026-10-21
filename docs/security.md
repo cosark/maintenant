@@ -323,6 +323,8 @@ The route that serves the uploaded status page images (`/api/v1/status-page/asse
 
 HSTS is deliberately **not** set by the application. TLS terminates at your reverse proxy, and the app would have to infer "this was HTTPS" from a forwarded header a client can forge. Set `Strict-Transport-Security` in the proxy.
 
+Every `/api/v1/` answer carries `Cache-Control: no-store`, so neither the browser nor an intermediate cache keeps it; the SSE streams send `no-cache` instead. The web app's service worker keeps a short-lived cache of the other API answers (prefix `api-`) for offline use, but never caches container logs, status page subscribers, escalation policies, agents, security findings or CVEs: those always come from the network. When the authentication proxy session expires, the web app deletes every `api-` cache before sending the browser back to the login page.
+
 ### Request Size Limits
 
 Request bodies on `/api/` and `/ping/` are limited to **1 MB** by default, whatever the method. Configurable via `MAINTENANT_MAX_BODY_SIZE` (in bytes; a value that is not a positive whole number stops the startup with an error that names the variable). The public `/status/` routes have a fixed limit of 4 KiB. `/mcp` and `/oauth/*` set no size limit of their own.
@@ -624,7 +626,7 @@ Setting a container label creates a monitor, and anyone who can start a containe
 
 ### Outgoing mail
 
-The email channel and the status page subscription mails go through the one SMTP server set with `MAINTENANT_SMTP_*`. With `MAINTENANT_SMTP_PORT=465`, maintenant uses implicit TLS: the connection is encrypted from the first byte. On any other port the connection starts in plaintext and is upgraded with STARTTLS when the server announces it. A server that announces STARTTLS and then fails the negotiation gets no message: the send fails instead of falling back to plaintext. A server that does not announce STARTTLS receives the message unencrypted. The SMTP client refuses to send a username and password over an unencrypted connection unless the server is `localhost`, so a server without STARTTLS or TLS cannot be used with credentials.
+The email channel and the status page subscription mails go through the one SMTP server set with `MAINTENANT_SMTP_*`. With `MAINTENANT_SMTP_PORT=465`, maintenant uses implicit TLS: the connection is encrypted from the first byte. On any other port the connection starts in plaintext and is upgraded with STARTTLS when the server announces it. A server that announces STARTTLS and then fails the negotiation gets no message: the send fails instead of falling back to plaintext. A server that does not announce STARTTLS gets no message either: the send fails with an error naming `MAINTENANT_SMTP_ALLOW_PLAINTEXT`. Setting `MAINTENANT_SMTP_ALLOW_PLAINTEXT=true` lets such a server receive the message unencrypted, and maintenant logs a warning at startup while it is set. The SMTP client refuses to send a username and password over an unencrypted connection unless the server is `localhost`, so a server without STARTTLS or TLS cannot be used with credentials.
 
 ### Private CA
 

@@ -22,7 +22,7 @@ NL='
 '
 
 # Kept in step with internal/app/flags.go by internal/app/install_script_test.go.
-BOOL_FLAGS="proxyLabels disableOsEolRefresh disableTelemetry allowPrivateWebhooks \
+BOOL_FLAGS="proxyLabels disableOsEolRefresh disableTelemetry allowPrivateWebhooks smtpAllowPlaintext \
 mcp mcpAllowUnauthenticated grpc-tls-insecure grpc-insecure-skip-tls-verify embedded-agent"
 VALUE_FLAGS="addr baseUrl corsOrigins trustedProxies db organisationName runtime logLevel \
 maxBodySize updateInterval securityScoreThreshold licenseKey \
@@ -113,6 +113,7 @@ or "--flag=true|false". Run "maintenant --help" for what each flag does.
   --smtpUsername <user>
   --smtpPassword <pass>
   --smtpFrom <addr>
+  --smtpAllowPlaintext
   --mcp
   --mcpClientId <id>
   --mcpClientSecret <secret>

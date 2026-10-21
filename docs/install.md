@@ -141,6 +141,7 @@ Every `MAINTENANT_*` environment variable in the table has a CLI equivalent. Pre
 | `--smtpUsername` | `MAINTENANT_SMTP_USERNAME` | string | _(unset)_ |
 | `--smtpPassword` | `MAINTENANT_SMTP_PASSWORD` | string | _(unset)_ |
 | `--smtpFrom` | `MAINTENANT_SMTP_FROM` | string | `maintenant@localhost` |
+| `--smtpAllowPlaintext` | `MAINTENANT_SMTP_ALLOW_PLAINTEXT` | bool | `false` |
 | `--mcp` | `MAINTENANT_MCP` | bool | `false` |
 | `--mcpClientId` | `MAINTENANT_MCP_CLIENT_ID` | string | _(unset)_ |
 | `--mcpClientSecret` | `MAINTENANT_MCP_CLIENT_SECRET` | string | _(unset)_ |

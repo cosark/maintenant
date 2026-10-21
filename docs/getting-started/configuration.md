@@ -72,7 +72,7 @@ Conventions used below:
 
 ### Notifications (SMTP)
 
-One SMTP configuration serves the email alert channel (Personal) and the status page subscriber emails (Pro, see [Public Status Page](../features/status-page.md)). Mails are plain text. On port 465 maintenant uses implicit TLS. On any other port it connects in plain text and upgrades with STARTTLS when the server announces it: if the upgrade then fails, the send fails instead of falling back to plain text, and a server that does not announce STARTTLS receives the mail unencrypted. Each send gives up after 30 seconds.
+One SMTP configuration serves the email alert channel (Personal) and the status page subscriber emails (Pro, see [Public Status Page](../features/status-page.md)). Mails are plain text. On port 465 maintenant uses implicit TLS. On any other port it connects in plain text and requires STARTTLS: if the upgrade fails, the send fails instead of falling back to plain text, and a server that does not announce STARTTLS receives nothing unless `MAINTENANT_SMTP_ALLOW_PLAINTEXT` is true. Each send gives up after 30 seconds.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -81,6 +81,7 @@ One SMTP configuration serves the email alert channel (Personal) and the status 
 | `MAINTENANT_SMTP_USERNAME` | — | Username for `AUTH PLAIN`. Authentication is attempted only when it is set. |
 | `MAINTENANT_SMTP_PASSWORD` | — | Password for `AUTH PLAIN`. |
 | `MAINTENANT_SMTP_FROM` | `maintenant@localhost` | Sender address. |
+| `MAINTENANT_SMTP_ALLOW_PLAINTEXT` | `false` | Sends mail in clear to a server that does not announce STARTTLS (port 465 ignores it). Credentials are still refused in clear unless the server is `localhost`. A warning is logged at startup when it is true. |
 
 ### License
 

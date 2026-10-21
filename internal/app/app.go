@@ -378,6 +378,9 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 
 		AllowPlaintext: cfg.SMTP.AllowPlaintext,
 	}
+	if cfg.SMTP.AllowPlaintext {
+		logger.Warn("SMTP plaintext allowed: a server without STARTTLS receives mail in clear", "variable", "MAINTENANT_SMTP_ALLOW_PLAINTEXT")
+	}
 	a.notifier = alert.NewNotifier(channelStore, logger, cfg.AllowPrivateWebhooks, alert.WithBaseURL(cfg.BaseURL))
 	if a.ext.Channels != nil {
 		channels := a.ext.Channels(extpoint.ChannelDeps{
