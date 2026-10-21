@@ -357,6 +357,17 @@ Before the raw transitions, check results and heartbeat pings are deleted, the s
 
 ---
 
+## Memory footprint
+
+Memory is measured with `docker stats --no-stream maintenant`, first on an empty instance right after it starts, then on the same instance on a busy host after several days.
+
+- 32 MB one hour after a restart.
+- About 100 MB after several days on a busy host.
+
+The slow growth between the two is being investigated.
+
+---
+
 ## HTTP layer
 
 The top-level mux routes `/mcp` (when MCP is enabled) and the OAuth endpoints (when a client id and secret are also set), `/status/*` (public status page), `/api/`, `/ping/` and, for everything else, the embedded single-page application with a fallback to `index.html`. Token buckets protect it: 10 requests per second (burst 20) per IP for `/status/`, `/mcp` and `/oauth/`, the same per IP for pings with an unknown token, 60 per minute per token for pings with a known one, 50 per second (burst 200) per IP for `/api/`, and 5 per hour per IP for status page subscriptions. A `Host` outside `MAINTENANT_ALLOWED_HOSTS` (or the hosts derived from the configured URLs) gets `421` on everything but the public routes, and a dedicated status host answers `404` outside them. Client addresses are read from forwarded headers only for the proxies listed in `MAINTENANT_TRUSTED_PROXIES`.

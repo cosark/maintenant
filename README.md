@@ -10,7 +10,7 @@
   <strong>Drop a container. Your stack is monitored.</strong><br>
   <em>When something breaks, fixed rules catch it, the alert is pushed to you, and your AI agent investigates through the built-in MCP server.</em><br><br>
   Docker, Kubernetes, uptime, TLS, cron jobs, live logs, image updates, CVEs: auto-discovered, alerting on every one of them,<br>
-  from a single Go binary that idles under 30 MB of RAM. No PromQL, no exporters, no dashboards to build.
+  from a single Go binary that fits in a few tens of MB of RAM when freshly started (about 100 MB after several days on a busy host). No PromQL, no exporters, no dashboards to build.
 </p>
 
 <p align="center">
@@ -405,7 +405,7 @@ volumes:
 - **Zero dependencies.** SQLite is the only datastore. No Redis, no queue, nothing to administer. A fleet operator may back the server on a [PostgreSQL](https://docs.maintenant.dev/guides/postgresql/) they already run; agents always stay on SQLite.
 - **Runtime optional.** Endpoints, certificates and heartbeats run without any Docker socket or Kubernetes API. Container monitoring resumes on its own when a runtime becomes reachable.
 - **Real-time.** SSE pushes every state change to the browser and to the status page instantly.
-- **Under 30 MB of RAM at idle.** Runs on a Raspberry Pi, a €4 VPS or a NAS.
+- **Light on memory.** A freshly started instance fits in a few tens of MB; plan on about 100 MB after several days on a busy host. Runs on a Raspberry Pi, a €4 VPS or a NAS.
 
 Full write-up in the [architecture documentation](https://docs.maintenant.dev/architecture/).
 
