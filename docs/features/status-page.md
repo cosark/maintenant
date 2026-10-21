@@ -88,7 +88,7 @@ POST /api/v1/status/components
   "composition_mode": "explicit",
   "monitors": [
     { "type": "container", "id": "0195f3c2-7b1e-7c3a-9d2e-5a4f8e1b6c70" },
-    { "type": "endpoint",  "id": "0195f3c4-11aa-7f00-8c55-2b9d0e3a4c18" }
+    { "type": "endpoint",  "id": "0195f3c4-11aa-7f00-8c55-2b9d0e3a4c18", "label": "Public API" }
   ],
   "display_order": 1,
   "visible": true,
@@ -108,7 +108,7 @@ POST /api/v1/status/components
 |-------|---------|
 | `display_name` | Name shown on the page. Required. |
 | `composition_mode` | `explicit` (default) or `match-all`. Fixed once the component exists. |
-| `monitors` | Explicit mode only, at least one entry. Each entry is `{type, id}` where `id` is the UUID of the monitor. |
+| `monitors` | Explicit mode only, at least one entry. Each entry is `{type, id, label}` where `id` is the UUID of the monitor. `label` is optional: plain text, 80 characters at most, without control characters (line breaks, tabs), trimmed. The public page shows it instead of the type name. A label outside this rule is refused with `400 validation`. |
 | `match_all_type` | Match-all mode only: `container`, `endpoint`, `heartbeat` or `certificate`. Fixed once the component exists. |
 | `display_order` | Sort position on the page. |
 | `visible` | `false` hides the component from the public page and from the global status. A hidden component is never named on a public surface: not in `/status/api`, not in the `/status/events` stream, not in subscriber emails, and it never opens an automatic incident. Default `true`. |
@@ -191,7 +191,7 @@ The stream carries these events. They are also sent on the admin stream `/api/v1
 
 | Event | Payload | Sent when |
 |-------|---------|-----------|
-| `status.component_changed` | `component_id`, `name`, `status`, `monitors` | A monitor linked to the component changes (container state or health, endpoint status, heartbeat or certificate alert). Not sent on the public stream for a hidden component |
+| `status.component_changed` | `component_id`, `name`, `status`, `monitors` | A monitor linked to the component changes (container state or health, endpoint status, heartbeat or certificate alert). On the public stream each monitor is `{type, status, label}`, without its id or name; the admin stream keeps `{type, id, name, label, status}`. Not sent on the public stream for a hidden component |
 | `status.global_changed` | `status`, `message` | After every component change, creation, edit or deletion |
 | `status.component_created`, `status.component_updated`, `status.component_deleted` | `component_id` | A component is created, edited or deleted. The public page receives it only when the component is or was visible |
 | `status.incident_created` | `id`, `title`, `severity`, `status`, `components` | An incident is opened. `components` lists only the visible components; the dashboard stream gets the full list |
@@ -210,7 +210,7 @@ The page updates in place: `status.component_changed` and `status.global_changed
   "updated_at": "2026-03-10T14:02:11Z",
   "components": [{
     "id": "…", "name": "API", "status": "degraded",
-    "monitors": [{ "type": "endpoint", "id": "…", "name": "api.example.com", "status": "degraded" }]
+    "monitors": [{ "type": "endpoint", "status": "degraded", "label": "Public API" }]
   }],
   "active_incidents": [{
     "id": "…", "title": "API latency increase", "severity": "minor",
@@ -224,7 +224,7 @@ The page updates in place: `status.component_changed` and `status.global_changed
 }
 ```
 
-`monitors` is the per-monitor breakdown of each component, the same as in the `status.component_changed` event, so a reload keeps it. Incidents and maintenance windows name only the visible components. `subscriptions_enabled` is `true` only when email subscriptions are open. The page shows its *Subscribe to updates* form only in that case. `personalization_version` is omitted when no personalization has been saved.
+`monitors` is the per-monitor breakdown of each component, in the same public form as the `status.component_changed` event, so a reload keeps it. Each monitor is `{type, status, label}`, and `label` is omitted when none is set. The id and the name (the target, such as a URL or a host) of a monitor never appear on a public surface; the page names a monitor by its label, or by its type when it has none. Incidents and maintenance windows name only the visible components. `subscriptions_enabled` is `true` only when email subscriptions are open. The page shows its *Subscribe to updates* form only in that case. `personalization_version` is omitted when no personalization has been saved.
 
 ### `/status/feed.atom`
 
