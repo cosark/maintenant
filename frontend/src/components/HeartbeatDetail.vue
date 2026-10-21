@@ -26,6 +26,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
+  refresh: []
 }>()
 
 const detail = ref<HeartbeatDetailResponse | null>(null)
@@ -33,6 +34,7 @@ const executions = ref<HeartbeatExecution[]>([])
 const loading = ref(true)
 const expandedPayload = ref<string | null>(null)
 const rotating = ref(false)
+const rotateError = ref<string | null>(null)
 const confirm = useConfirm()
 
 onMounted(async () => {
@@ -57,11 +59,14 @@ async function handleRotate() {
   })
   if (!ok) return
   rotating.value = true
+  rotateError.value = null
   try {
     const heartbeat = await rotatePingToken(props.heartbeatId)
     const { snippets } = await getHeartbeat(props.heartbeatId)
     detail.value = { heartbeat, snippets }
-  } catch {
+    emit('refresh')
+  } catch (e) {
+    rotateError.value = e instanceof Error ? e.message : 'Failed to rotate ping token'
     // the panel keeps showing the current token
   } finally {
     rotating.value = false
@@ -173,6 +178,7 @@ const outcomeColors: Record<string, { bg: string; color: string }> = {
             Rotate token
           </UiButton>
         </div>
+        <p v-if="rotateError" class="mb-2 text-xs" style="color: var(--mnt-status-down)">{{ rotateError }}</p>
         <code class="block break-all text-sm" style="color: var(--mnt-text-primary)">
           /ping/{{ detail.heartbeat.ping_token }}
         </code>

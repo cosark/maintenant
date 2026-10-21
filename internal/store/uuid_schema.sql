@@ -300,7 +300,7 @@ CREATE TABLE cert_chain_entries (
 CREATE INDEX idx_chain_entry_check ON cert_chain_entries(check_result_id, position);
 
 -- ============================================================ heartbeats =====
--- PK is the heartbeat's public ping token (already a UUID). No separate int id.
+-- id is an ordinary UUID; the public ping token lives in ping_token (unique).
 CREATE TABLE heartbeats (
     id              TEXT PRIMARY KEY NOT NULL,
     agent_id        TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000' REFERENCES agents(id) ON DELETE CASCADE,

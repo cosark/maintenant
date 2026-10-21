@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
@@ -39,6 +40,9 @@ const heartbeatColumns = `id, agent_id, name, status, alert_state,
 func (s *HeartbeatStore) CreateHeartbeat(ctx context.Context, h *heartbeat.Heartbeat) (string, error) {
 	if h.ID == "" {
 		h.ID = uid.New()
+	}
+	if h.PingToken == "" {
+		h.PingToken = uuid.New().String()
 	}
 	h.AgentID = uid.Agent(h.AgentID)
 	now := time.Now().Unix()
