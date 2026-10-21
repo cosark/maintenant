@@ -97,6 +97,8 @@ type Service struct {
 
 	agentDetailsMu sync.RWMutex
 	agentDetails   map[agentContainerKey]AgentDetails
+
+	localStarts sync.Map // external ID -> time.Time of the last start event
 }
 
 // NewService creates a new container service with all dependencies.
@@ -148,6 +150,9 @@ func (s *Service) ProcessEvent(ctx context.Context, evt ContainerEvent) {
 	s.logger.Debug("container: event received", "action", evt.Action, "external_id", evt.ExternalID)
 	switch evt.Action {
 	case "start":
+		if uid.Agent(evt.AgentID) == uid.LocalAgent && !evt.Timestamp.IsZero() {
+			s.localStarts.Store(evt.ExternalID, evt.Timestamp)
+		}
 		s.handleStateChange(ctx, evt, StateRunning)
 	case "stop":
 		// Docker sends "die" before "stop". If the container exited cleanly (exit 0),
@@ -266,7 +271,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 	// Only for local containers: logFetcher targets the server's own runtime and
 	// cannot read logs of a container living on a remote agent's host.
 	if evt.Action == "die" && s.logFetcher != nil && c.AgentID == uid.LocalAgent {
-		snippet, err := s.logFetcher.FetchLogSnippet(ctx, evt.ExternalID)
+		snippet, err := s.fetchExitSnippet(ctx, evt.ExternalID)
 		if err != nil {
 			s.logger.Warn("fetch log snippet", "external_id", shortID(evt.ExternalID), "error", err)
 		} else {
@@ -317,7 +322,17 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 	})
 }
 
+// fetchExitSnippet returns the log lines since the container's last known start, or the unbounded snippet when that start is unknown.
+func (s *Service) fetchExitSnippet(ctx context.Context, externalID string) (string, error) {
+	started, ok := s.localStarts.LoadAndDelete(externalID)
+	if f, bounded := s.logFetcher.(snippetSinceFetcher); ok && bounded {
+		return f.FetchLogSnippetSince(ctx, externalID, started.(time.Time))
+	}
+	return s.logFetcher.FetchLogSnippet(ctx, externalID)
+}
+
 func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) {
+	s.localStarts.Delete(evt.ExternalID)
 	c, err := s.lookup(ctx, evt)
 	if err != nil {
 		s.logger.Error("get container for destroy", "external_id", shortID(evt.ExternalID), "error", err)

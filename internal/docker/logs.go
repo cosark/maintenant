@@ -48,17 +48,15 @@ func (c *Client) FetchLogs(ctx context.Context, containerID string, lines int, t
 	return demuxLogs(reader)
 }
 
-// FetchLogSnippetSince retrieves the log lines emitted after since, for a snippet on exit events.
+// FetchLogSnippetSince retrieves the last 50 log lines, restricted to those emitted after since unless it is zero, for a snippet on exit events.
 func (c *Client) FetchLogSnippetSince(ctx context.Context, containerID string, since time.Time) (string, error) {
-	panic("not implemented")
-}
-
-// FetchLogSnippet retrieves the last 50 lines of logs for storing as a snippet on exit events.
-func (c *Client) FetchLogSnippet(ctx context.Context, containerID string) (string, error) {
 	opts := client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Tail:       snippetTail,
+	}
+	if !since.IsZero() {
+		opts.Since = since.Format(time.RFC3339Nano)
 	}
 
 	reader, err := c.cli.ContainerLogs(ctx, containerID, opts)
@@ -78,6 +76,11 @@ func (c *Client) FetchLogSnippet(ctx context.Context, containerID string) (strin
 	}
 
 	return snippet, nil
+}
+
+// FetchLogSnippet retrieves the last 50 lines of logs for storing as a snippet on exit events.
+func (c *Client) FetchLogSnippet(ctx context.Context, containerID string) (string, error) {
+	return c.FetchLogSnippetSince(ctx, containerID, time.Time{})
 }
 
 // StreamLogs returns an io.ReadCloser that follows container logs in real-time.

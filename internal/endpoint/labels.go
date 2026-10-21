@@ -137,7 +137,7 @@ func ParseEndpointLabels(labels map[string]string, logger *slog.Logger) ([]*Pars
 
 		// Validate timeout <= interval
 		if cfg.Timeout > cfg.Interval {
-			logger.Warn("endpoint timeout > interval, adjusting", "endpoint", ep.Target, "timeout", cfg.Timeout, "interval", cfg.Interval)
+			logger.Info("endpoint timeout > interval, adjusting", "endpoint", ep.Target, "timeout", cfg.Timeout, "interval", cfg.Interval)
 			cfg.Timeout = cfg.Interval
 		}
 

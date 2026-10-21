@@ -54,6 +54,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	if err := checkLabelCount(ev); err != nil {
 		return err
 	}
+	WarnUnknownLabels(externalID, ev.GetLabels(), s.logger)
 
 	c, err := s.store.GetContainerByExternalID(ctx, uid.Agent(agentID), externalID)
 	if err != nil {

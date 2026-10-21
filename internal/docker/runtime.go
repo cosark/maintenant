@@ -207,7 +207,7 @@ func (r *Runtime) FetchLogs(ctx context.Context, externalID string, lines int, t
 
 // FetchLogSnippetSince retrieves the log lines emitted after since.
 func (r *Runtime) FetchLogSnippetSince(ctx context.Context, externalID string, since time.Time) (string, error) {
-	panic("not implemented")
+	return r.client.FetchLogSnippetSince(ctx, externalID, since)
 }
 
 // FetchLogSnippet retrieves the last 50 lines of logs for die event snippets.
