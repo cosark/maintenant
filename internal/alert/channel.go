@@ -6,7 +6,6 @@ package alert
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -116,13 +115,9 @@ func (s *webhookSender) request(ctx context.Context, ch *NotificationChannel, bo
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if ch.Headers != "" {
-		var headers map[string]string
-		if err := json.Unmarshal([]byte(ch.Headers), &headers); err == nil {
-			for k, v := range headers {
-				req.Header.Set(k, v)
-			}
-		}
+	headers, _ := ParseHeaders(ch.Headers)
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 
 	return req, nil

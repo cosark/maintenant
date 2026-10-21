@@ -462,14 +462,20 @@ Channels are silent by default. They only fire when referenced by an [Alert Trig
 | `slack` | Slack webhook URL | Pro |
 | `teams` | Teams webhook URL | Pro |
 
-A channel has `id`, `name`, `type`, `url`, `headers` (a string holding a JSON object), `config` (a string holding JSON, for example `{"thread_id": "42"}` on Telegram), `has_secret`, `enabled`, `health` (`healthy` or `failing`, on the list only), `suspended`, `required_edition` and timestamps. The secret (a Telegram bot token) is never returned, only `has_secret`; the URL and headers are returned as stored.
+A channel has `id`, `name`, `type`, `url`, `headers` (a string holding a JSON object), `config` (a string holding JSON, for example `{"thread_id": "42"}` on Telegram), `has_secret`, `has_headers`, `has_url_secret`, `enabled`, `health` (`healthy` or `failing`, on the list only), `suspended`, `required_edition` and timestamps. Secrets never come back, on the list, in the `POST` and `PUT` answers or in the `channel.created` and `channel.updated` SSE events:
 
-- `POST` body: `name` (required), `url` (required), `type`, `headers`, `secret` (required for Telegram), `config` and `enabled` (default `true`). A URL must be HTTPS and must not resolve to a private or internal address, unless `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS` is set. Answers `201` with the channel.
-- `PUT` takes the same fields, all optional. A secret cannot be cleared. A request that only sets `enabled` to `false` is always accepted, even after the edition dropped.
+- The secret (a Telegram bot token) is never returned, only `has_secret`.
+- Header values are replaced by `***`: `headers` comes back as the same names, sorted, for example `{"Authorization":"***","X-Trace":"***"}`, with `has_headers: true`. Without any header, `headers` is absent and `has_headers` is `false`.
+- The `url` of a `slack`, `discord` or `teams` channel is cut after the host (`https://hooks.slack.com`), with `has_url_secret: true`. Other types return their `url` whole, with `has_url_secret: false`.
+
+Deliveries always use the stored values.
+
+- `POST` body: `name` (required), `url` (required), `type`, `headers`, `secret` (required for Telegram), `config` and `enabled` (default `true`). A URL must be HTTPS and must not resolve to a private or internal address, unless `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS` is set. `headers` is empty or a string holding a JSON object whose names are not empty and whose values are all strings, such as `"{\"Authorization\":\"Bearer x\"}"`; anything else answers `400 INVALID_INPUT` and nothing is written. Answers `201` with the stored channel, masked, with its timestamps.
+- `PUT` takes the same fields, all optional, and answers `200` with the stored channel, masked, with its timestamps. An absent `headers` or `url` keeps the stored value, so the masked values never need to be sent back; `headers: "{}"` or `""` clears the headers. A secret cannot be cleared. A request that only sets `enabled` to `false` is always accepted, even after the edition dropped.
 - A `webhook` channel receives `{ "event": "alert.fired" | "alert.resolved", "alert": {...}, "timestamp": "..." }`. `alert` holds the fields of the [`alert.fired` SSE event](#sse-event-stream), plus `url`, the link to the alert in the UI (`<MAINTENANT_BASE_URL>/alerts/history?alert=<id>`). `url` is absent when the base URL has no host a recipient could open, as with the default built from a listen address such as `:8080` or `0.0.0.0:8080`.
 - `test` answers `404 NOT_FOUND` for an unknown channel. Otherwise it answers `200`: `{ "status": "delivered", "response_code": n }` or `{ "status": "failed", "error": "..." }`.
 - Creating, updating or testing a channel of a type the edition does not open answers `403 EDITION_REQUIRED` (`feature` is the capability: `slack`, `teams`, `smtp` or `telegram`). After a downgrade such a channel is `suspended`: it stops delivering and `GET /api/v1/edition` lists it under `suspended_channels`.
-- Errors: `400 INVALID_BODY`, `400 VALIDATION_ERROR`, `404 NOT_FOUND` and `409 DUPLICATE_NAME` on create.
+- Errors: `400 INVALID_BODY`, `400 INVALID_INPUT` (malformed `headers`), `400 VALIDATION_ERROR`, `404 NOT_FOUND` and `409 DUPLICATE_NAME` on create.
 
 ---
 

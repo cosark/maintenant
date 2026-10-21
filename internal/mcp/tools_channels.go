@@ -16,13 +16,13 @@ import (
 func registerChannelTools(server *gomcp.Server, svc *Services) {
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_channels",
-		Description: "List notification channels. Channels are silent on their own: an alert reaches one only through an alert trigger or an escalation level. Secrets are never returned.",
+		Description: "List notification channels. Channels are silent on their own: an alert reaches one only through an alert trigger or an escalation level. Header values are masked as *** and Slack, Discord and Teams webhook URLs are cut after the host; the secret is never returned.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listChannelsHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_channel",
-		Description: "Get a single notification channel by ID, with its delivery health and the triggers routing to it.",
+		Description: "Get a single notification channel by ID, with its delivery health and the triggers routing to it. Header values are masked as *** and Slack, Discord and Teams webhook URLs are cut after the host; the secret is never returned.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getChannelHandler(svc))
 
@@ -70,7 +70,7 @@ type createChannelInput struct {
 	Name    string `json:"name" jsonschema:"Channel name, unique across channels"`
 	Type    string `json:"type" jsonschema:"Channel type: webhook, email, telegram, slack or teams. Defaults to webhook."`
 	URL     string `json:"url" jsonschema:"Destination: an HTTPS webhook URL, an email address, or a Telegram chat id"`
-	Headers string `json:"headers,omitempty" jsonschema:"Extra HTTP headers as a JSON object, webhook types only"`
+	Headers string `json:"headers,omitempty" jsonschema:"Extra HTTP headers as a JSON object of strings, webhook types only"`
 	Secret  string `json:"secret,omitempty" jsonschema:"Channel credential, a Telegram bot token today. Write-only: it is never read back."`
 	Config  string `json:"config,omitempty" jsonschema:"Non-secret per-type settings as a JSON object, e.g. {\"thread_id\":\"42\"} for Telegram"`
 	Enabled *bool  `json:"enabled,omitempty" jsonschema:"Whether the channel accepts deliveries, default true"`
@@ -81,7 +81,7 @@ type updateChannelInput struct {
 	Name    *string `json:"name,omitempty" jsonschema:"New channel name"`
 	Type    *string `json:"type,omitempty" jsonschema:"New channel type"`
 	URL     *string `json:"url,omitempty" jsonschema:"New destination"`
-	Headers *string `json:"headers,omitempty" jsonschema:"New extra HTTP headers as a JSON object"`
+	Headers *string `json:"headers,omitempty" jsonschema:"New extra HTTP headers as a JSON object of strings. Omit to keep the stored ones; {} clears them."`
 	Secret  *string `json:"secret,omitempty" jsonschema:"New credential. Omit to keep the stored one; it cannot be set to empty."`
 	Config  *string `json:"config,omitempty" jsonschema:"New non-secret per-type settings as a JSON object"`
 	Enabled *bool   `json:"enabled,omitempty" jsonschema:"Whether the channel accepts deliveries"`
@@ -152,6 +152,20 @@ func (s *Services) broadcast(eventType string, data any) {
 	}
 }
 
+// readBackChannel returns the stored row, masked, so a response carries the dates and never a secret.
+func readBackChannel(ctx context.Context, svc *Services, id string) (*alert.NotificationChannel, error) {
+	ch, err := svc.Channels.GetChannel(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if ch == nil {
+		return nil, fmt.Errorf("channel %s not found after write", id)
+	}
+	ch.MarkSuspension()
+	ch.Redact()
+	return ch, nil
+}
+
 func listChannelsHandler(svc *Services) gomcp.ToolHandlerFor[listChannelsInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, _ listChannelsInput) (*gomcp.CallToolResult, any, error) {
 		if svc.Channels == nil {
@@ -161,13 +175,14 @@ func listChannelsHandler(svc *Services) gomcp.ToolHandlerFor[listChannelsInput, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("list channels: %w", err)
 		}
-		if channels == nil {
-			channels = []*alert.NotificationChannel{}
-		}
+		out := make([]*alert.NotificationChannel, 0, len(channels))
 		for _, ch := range channels {
-			ch.MarkSuspension()
+			cp := *ch
+			cp.MarkSuspension()
+			cp.Redact()
+			out = append(out, &cp)
 		}
-		return jsonResult(map[string]any{"channels": channels})
+		return jsonResult(map[string]any{"channels": out})
 	}
 }
 
@@ -185,6 +200,7 @@ func getChannelHandler(svc *Services) gomcp.ToolHandlerFor[getChannelInput, any]
 		}
 
 		ch.MarkSuspension()
+		ch.Redact()
 		out := map[string]any{"channel": ch}
 		if health, err := svc.Channels.GetChannelHealth(ctx, ch.ID); err == nil {
 			out["health"] = health
@@ -223,6 +239,9 @@ func createChannelHandler(svc *Services) gomcp.ToolHandlerFor[createChannelInput
 		if err := validateChannelDestination(ctx, svc, input.Type, input.URL); err != nil {
 			return errResult("field=url: " + err.Error())
 		}
+		if _, err := alert.ParseHeaders(input.Headers); err != nil {
+			return errResult("field=headers: " + err.Error())
+		}
 		config := normalizeConfig(input.Config)
 		if err := validateChannelCredentials(svc, input.Type, input.Secret, config); err != nil {
 			return errResult(err.Error())
@@ -249,12 +268,12 @@ func createChannelHandler(svc *Services) gomcp.ToolHandlerFor[createChannelInput
 			}
 			return nil, nil, fmt.Errorf("create channel: %w", err)
 		}
-		ch.ID = id
-		ch.HasSecret = ch.Secret != ""
-
-		ch.MarkSuspension()
-		svc.broadcast(event.ChannelCreated, ch)
-		return jsonResult(ch)
+		stored, err := readBackChannel(ctx, svc, id)
+		if err != nil {
+			return nil, nil, fmt.Errorf("create channel: read back: %w", err)
+		}
+		svc.broadcast(event.ChannelCreated, stored)
+		return jsonResult(stored)
 	}
 }
 
@@ -297,6 +316,9 @@ func updateChannelHandler(svc *Services) gomcp.ToolHandlerFor[updateChannelInput
 			ch.URL = *input.URL
 		}
 		if input.Headers != nil {
+			if _, err := alert.ParseHeaders(*input.Headers); err != nil {
+				return errResult("field=headers: " + err.Error())
+			}
 			ch.Headers = *input.Headers
 		}
 		if input.Secret != nil {
@@ -326,11 +348,12 @@ func updateChannelHandler(svc *Services) gomcp.ToolHandlerFor[updateChannelInput
 		if err := svc.Channels.UpdateChannel(ctx, ch); err != nil {
 			return nil, nil, fmt.Errorf("update channel: %w", err)
 		}
-		ch.HasSecret = ch.Secret != ""
-
-		ch.MarkSuspension()
-		svc.broadcast(event.ChannelUpdated, ch)
-		return jsonResult(ch)
+		stored, err := readBackChannel(ctx, svc, input.ID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("update channel: read back: %w", err)
+		}
+		svc.broadcast(event.ChannelUpdated, stored)
+		return jsonResult(stored)
 	}
 }
 

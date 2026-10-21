@@ -231,7 +231,7 @@ The write tools of this section change configuration: channels, triggers and esc
 
 | Tool | Description | Edition |
 |------|-------------|---------|
-| `list_channels` / `get_channel` | List or fetch notification channels; `get_channel` adds the delivery health and the triggers routing to it. Secrets are never returned. | Community |
+| `list_channels` / `get_channel` | List or fetch notification channels; `get_channel` adds the delivery health and the triggers routing to it. Header values are masked as `***` and Slack, Discord and Teams webhook URLs are cut after the host, here and in the answers of `create_channel` and `update_channel`; the secret is never returned. | Community |
 | `create_channel` / `update_channel` / `delete_channel` | Manage notification channels (webhook is Community; email and Telegram need Personal, Slack and Teams need Pro). A channel is created enabled unless `enabled` is `false`. | Community |
 | `test_channel` | Send a test notification through a channel | Community |
 | `list_triggers` / `get_trigger` | List or fetch alert triggers (entity to channel routing) | Community |
