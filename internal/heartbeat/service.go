@@ -153,6 +153,11 @@ func (s *Service) CreateHeartbeat(ctx context.Context, input CreateHeartbeatInpu
 	return created, nil
 }
 
+// GetHeartbeatByPingToken returns the heartbeat a ping token belongs to, or nil when no heartbeat has it.
+func (s *Service) GetHeartbeatByPingToken(ctx context.Context, token string) (*Heartbeat, error) {
+	return s.store.GetHeartbeatByPingToken(ctx, token)
+}
+
 func (s *Service) GetHeartbeat(ctx context.Context, id string) (*Heartbeat, error) {
 	h, err := s.store.GetHeartbeatByID(ctx, id)
 	if err != nil {

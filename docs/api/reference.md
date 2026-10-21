@@ -80,7 +80,7 @@ The local runtime is itself an agent, identified by the sentinel id `00000000-00
 
 ### Limits
 
-- **Rate limits**: per client IP, in token buckets. `/api/` allows 50 requests per second (burst 200). `/ping/`, `/status/`, `/mcp` and `/oauth/` share a tighter bucket of 10 requests per second (burst 20). Status page subscriptions are limited to 5 per hour. Client addresses behind a reverse proxy are only read from forwarded headers for the proxies listed in `MAINTENANT_TRUSTED_PROXIES`.
+- **Rate limits**: per client IP, in token buckets. `/api/` allows 50 requests per second (burst 200). `/status/`, `/mcp` and `/oauth/` share a tighter bucket of 10 requests per second (burst 20). `/ping/` has its own: 60 pings per minute per known token, whatever the address, and 10 per second (burst 20) per address for unknown tokens. Status page subscriptions are limited to 5 per hour. Client addresses behind a reverse proxy are only read from forwarded headers for the proxies listed in `MAINTENANT_TRUSTED_PROXIES`.
 - **Body size**: 1 MiB for `/api/` by default (`MAINTENANT_MAX_BODY_SIZE`), whatever the method. A value that is not a positive whole number of bytes stops the server at startup. Past the limit the JSON decoding fails and the route answers its invalid body error. Public `/status/` routes accept 4 KiB.
 - **Timeout**: 10 seconds for every route except the event streams.
 
@@ -258,7 +258,7 @@ Errors:
 
 ### Ping endpoints (public)
 
-These routes need no credentials: the UUID of the heartbeat is the secret. They share the tight rate limit of `/ping/` and answer `403 DEMO_MODE` in demo mode.
+These routes need no credentials: the ping token of the heartbeat is the secret. A known token is limited to 60 pings per minute, an unknown one counts against the caller's address (10 per second, burst 20). They answer `403 DEMO_MODE` in demo mode.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|

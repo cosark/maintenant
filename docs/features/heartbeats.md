@@ -250,7 +250,7 @@ The first send happens within seconds of creating the target. Two instances can 
 
 The `/ping/` routes are designed to be publicly accessible. maintenant applies no authentication of its own to them, since your cron jobs and external services need to reach them directly.
 
-Pings are rate limited to 10 requests per second per client address, with a burst of 20, and a request over the limit answers `429` with a `Retry-After` header. Behind a reverse proxy, set `MAINTENANT_TRUSTED_PROXIES`: without it every caller counts as the proxy and shares its single limit. A demo build does not accept pings: the `/ping/` routes answer `403 DEMO_MODE`.
+Each ping token is limited to 60 pings per minute, whatever the address it comes from. Pings with an unknown token are limited to 10 requests per second per client address, with a burst of 20, so a flood of invalid tokens never blocks a valid one. A request over the limit answers `429` with a `Retry-After` header and is not recorded. Behind a reverse proxy, set `MAINTENANT_TRUSTED_PROXIES`: without it every caller with an unknown token counts as the proxy and shares its single limit. A demo build does not accept pings: the `/ping/` routes answer `403 DEMO_MODE`.
 
 !!! warning "Reverse proxy configuration"
     Make sure your reverse proxy allows unauthenticated access to `/ping/` paths.

@@ -279,6 +279,7 @@ func NewRouter(d HandlerDeps) *Router {
 
 		// Public ping endpoints (top-level, no auth)
 		ph := NewPingHandler(d.Heartbeats, ratelimit.NewClientIPResolver(d.TrustedProxies))
+		ph.SetLimiters(d.PingIPLimiter, d.PingTokenLimiter)
 		r.mux.HandleFunc("GET /ping/{uuid}/start", ph.HandleStartPing)
 		r.mux.HandleFunc("POST /ping/{uuid}/start", ph.HandleStartPing)
 		r.mux.HandleFunc("GET /ping/{uuid}/{exit_code}", ph.HandleExitCodePing)

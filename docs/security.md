@@ -213,9 +213,13 @@ believed**: `X-Forwarded-For`, `X-Real-IP` and `X-Forwarded-Host` are not read
 at all, and every rate-limit quota is counted against the address that opened
 the connection. Anyone able to reach the instance directly can otherwise send a
 different header on every request and get a fresh quota each time. Behind a
-proxy that is not listed, every visitor looks like the proxy itself: heartbeat
-pings, status page visitors and MCP clients share one public bucket (10 requests
-per second, burst of 20), and every dashboard user shares the API bucket.
+proxy that is not listed, every visitor looks like the proxy itself: status page
+visitors and MCP clients share one public bucket (10 requests per second, burst
+of 20), pings with an unknown token share their own bucket of the same size,
+and every dashboard user shares the API bucket. Pings with a known token are
+counted per token and are not affected. maintenant logs one `WARN` naming
+`MAINTENANT_TRUSTED_PROXIES` the first time a request carries `X-Forwarded-For`
+or `X-Real-IP` while the list is empty.
 
 The list has to contain the address maintenant sees as the connecting peer,
 which depends on where the proxy runs:
@@ -274,15 +278,17 @@ schema on first start and read/write it afterwards; nothing more.
 
 ### Rate Limiting
 
-Three per-address token bucket limiters, tight for the public surfaces and loose for the admin API:
+Token bucket limiters, tight for the public surfaces and loose for the admin API. Each one has its own buckets, so a flood on one surface does not use up the quota of another:
 
-| Limiter | Applied to | Rate | Burst |
-|---------|------------|------|-------|
-| Public | `/ping/`, every `/status/` route, `/mcp`, `/oauth/authorize`, `/oauth/token` | 10 requests/second | 20 |
-| Admin API | `/api/*` | 50 requests/second | 200 |
-| Subscription | `POST /status/subscribe`, in addition to the public limiter | 5 requests/hour | 5 |
+| Limiter | Applied to | Rate | Burst | Counted per |
+|---------|------------|------|-------|-------------|
+| Public | every `/status/` route, `/mcp`, `/oauth/authorize`, `/oauth/token` | 10 requests/second | 20 | address |
+| Pings, unknown token | `/ping/` with a token no heartbeat has | 10 requests/second | 20 | address |
+| Pings, known token | `/ping/{token}`, `/ping/{token}/start`, `/ping/{token}/{exit_code}` | 60 per minute | 60 | token, whatever the address |
+| Admin API | `/api/*` | 50 requests/second | 200 | address |
+| Subscription | `POST /status/subscribe`, in addition to the public limiter | 5 requests/hour | 5 | address |
 
-A refused request gets `429` with `{"error":{"code":"rate_limited","message":"Too many requests"}}` and a `Retry-After` header: 1 second for the public and admin API limiters, 720 seconds for subscriptions. The OAuth metadata documents under `/.well-known/` and the web app's own files (`/`, `/assets/*`) are not limited.
+A flood of invalid tokens from one address therefore never blocks a valid heartbeat ping from the same address, and a refused ping is not recorded. A refused request gets `429` with `{"error":{"code":"rate_limited","message":"Too many requests"}}` and a `Retry-After` header: 1 second for the public, ping and admin API limiters, 720 seconds for subscriptions. The OAuth metadata documents under `/.well-known/` and the web app's own files (`/`, `/assets/*`) are not limited.
 
 The admin API limit is a flood ceiling, not a quota. A dashboard page load fans out dozens of parallel calls, so the public bucket would reject ordinary use; at 50/s with a burst of 200 the interface never reaches it. It exists so an unauthenticated surface, or a stolen session, cannot hammer expensive routes for free.
 

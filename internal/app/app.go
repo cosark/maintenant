@@ -120,6 +120,8 @@ type App struct {
 	rl             *ratelimit.Limiter
 	apiRL          *ratelimit.Limiter
 	subscribeRL    *ratelimit.Limiter
+	pingRL         *ratelimit.Limiter
+	pingTokenRL    *ratelimit.Limiter
 	licenseMgr     extension.EditionSource
 	ext            extpoint.Set
 	mcpServer      *gomcp.Server
@@ -174,8 +176,11 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	clientIP := ratelimit.NewClientIPResolver(trustedProxies)
 
 	// --- Rate limiters ---
-	// Public surfaces (/ping/, /status/, /mcp, /oauth/) take the tight bucket.
+	// Public surfaces (/status/, /mcp, /oauth/) take the tight bucket.
 	a.rl = ratelimit.New(10, 20, clientIP)
+	// Pings: unknown tokens per address, known tokens per token whatever the address.
+	a.pingRL = ratelimit.New(10, 20, clientIP)
+	a.pingTokenRL = ratelimit.New(1, 60, nil)
 	// /api/ gets its own, far looser one: a dashboard load fans out dozens of
 	// parallel calls, so the tight bucket would 429 ordinary use. This is a
 	// flood ceiling, not a quota — it must never be reachable by the UI.
@@ -662,6 +667,8 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		AllowPrivateWebhooks: cfg.AllowPrivateWebhooks,
 		TrustedProxies:       trustedProxies,
 		DemoMode:             cfg.DemoMode,
+		PingIPLimiter:        a.pingRL,
+		PingTokenLimiter:     a.pingTokenRL,
 	})
 
 	// --- MCP Server ---
@@ -870,6 +877,8 @@ func (a *App) Start(ctx context.Context) error {
 	go a.rl.Start(ctx)
 	go a.apiRL.Start(ctx)
 	go a.subscribeRL.Start(ctx)
+	go a.pingRL.Start(ctx)
+	go a.pingTokenRL.Start(ctx)
 	go a.resourceSvc.Start(ctx)
 	go a.certSvc.Start(ctx)
 	if a.maintScheduler != nil {

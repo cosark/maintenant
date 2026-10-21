@@ -284,7 +284,7 @@ If maintenant runs behind a reverse proxy, `/mcp` and the OAuth routes need spec
 - **No buffering**: every `/mcp` response carries `X-Accel-Buffering: no`, which nginx honours. For a proxy that ignores it, disable response buffering for `/mcp`.
 - **Pass-through for OAuth**: the `/oauth/authorize` endpoint issues 302 redirects. Ensure your proxy does not intercept them.
 - **Set `MAINTENANT_BASE_URL`** to the public URL, for example `https://now.example.com`. It becomes the OAuth issuer, so a wrong value breaks discovery.
-- **Set `MAINTENANT_TRUSTED_PROXIES`** to the proxy's address. `/mcp`, `/oauth/authorize` and `/oauth/token` share a rate limit of 10 requests per second per client address (bursts of up to 20) with `/ping/` and `/status/`; without the setting, every request appears to come from the proxy.
+- **Set `MAINTENANT_TRUSTED_PROXIES`** to the proxy's address. `/mcp`, `/oauth/authorize` and `/oauth/token` share a rate limit of 10 requests per second per client address (bursts of up to 20) with `/status/`; without the setting, every request appears to come from the proxy.
 
 With OAuth configured, `/mcp` accepts any `Host` header, so a proxy on the same machine (nginx on `127.0.0.1` forwarding `now.example.com`) works. With `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED=true` and a listener on a loopback address, a request whose `Host` is not a loopback name is refused with `403 invalid Host header`.
 
