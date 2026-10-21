@@ -10,7 +10,13 @@ Expose maintenant monitoring data to AI coding assistants (Claude Code, Claude D
 
 maintenant embeds an MCP server that provides 51 tools covering every monitoring dimension: containers, endpoints, heartbeats, certificates, resources, alerts, image updates, security insights, CVEs, Kubernetes, Docker Swarm, alert routing, and the status page. AI assistants can use these tools to diagnose issues, correlate data, and act on them without you ever leaving your editor.
 
+17 of these tools write: they acknowledge alerts, pause monitors, open incidents, and create, change or delete notification channels, triggers and escalation policies. Served on `/mcp` without read-only mode, the MCP server is therefore an admin API: whoever holds a token with the `read write` scope can change what the dashboard can change.
+
 In a demo build, `/mcp` and the OAuth routes are not served, and the MCP server registers only its 34 read-only tools.
+
+### Read-only mode
+
+With `MAINTENANT_MCP_READ_ONLY=true`, the MCP server registers only its 34 read-only tools, on `/mcp` and on the local socket alike. The write tools are not listed, and a call to one of them is answered with the SDK's `unknown tool` error, whatever the token's scope. Use it when an assistant only needs to look.
 
 **Transports:**
 
@@ -94,6 +100,18 @@ When `MAINTENANT_MCP_CLIENT_ID` and `MAINTENANT_MCP_CLIENT_SECRET` are both set,
 
 **The client secret is the only access control.** Anyone who can reach `/oauth/authorize` with the right `client_id` gets a code, but cannot turn it into a token without the secret. The administrator generates the credentials and shares them with authorized users, who enter them in Claude's Advanced Settings. There is no user login page: maintenant has no user authentication system. At startup, maintenant logs a warning when the secret is shorter than 32 characters.
 
+#### Scopes
+
+`/oauth/authorize` accepts two scopes:
+
+| Requested `scope` | Granted scope | What the token can call |
+|-------------------|---------------|-------------------------|
+| absent, empty, or `read` | `read` | the read-only tools; a write tool answers `tool <name> requires the write scope; this token only grants read`, and nothing is written |
+| `read write` (any order, repeats ignored) | `read write` | every registered tool |
+| anything else (`write` alone, `admin`, `read foo`) | none | the authorization request is refused: the redirect carries `error=invalid_scope` and no code |
+
+The granted scope is stored with the code and the tokens, returned as `scope` by `/oauth/token`, and kept by a refresh: a `read` token never turns into `read write`. Tokens issued before scopes existed count as `read`, so a client that writes has to authorize again with `scope=read write`. The local socket and `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` carry no token and are not limited by scope.
+
 **Without OAuth credentials, maintenant refuses to start** when `MAINTENANT_MCP=true`: the error names `MAINTENANT_MCP_CLIENT_ID` and `MAINTENANT_MCP_CLIENT_SECRET`, because `/mcp` is meant to bypass the reverse proxy's authentication and would otherwise answer anyone. If only one of the two is set, it counts as missing. To serve `/mcp` with no authentication on a trusted network, set `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED=true`; the startup log then carries a warning.
 
 ### OAuth2 Endpoints
@@ -102,7 +120,7 @@ When `MAINTENANT_MCP_CLIENT_ID` and `MAINTENANT_MCP_CLIENT_SECRET` are both set,
 |----------|--------|-------------|
 | `/.well-known/oauth-protected-resource` | GET | Protected resource metadata (RFC 9728). Public. |
 | `/.well-known/oauth-authorization-server` | GET | Authorization server metadata (RFC 8414). Public. |
-| `/oauth/authorize` | GET | Authorization endpoint. Validates `client_id`, `redirect_uri` and PKCE, auto-approves, redirects with the code (`302`). |
+| `/oauth/authorize` | GET | Authorization endpoint. Validates `client_id`, `redirect_uri`, `scope` and PKCE, auto-approves, redirects with the code (`302`). |
 | `/oauth/token` | POST | Token endpoint. Checks `client_id` and `client_secret`, then exchanges a code (`authorization_code`) or refreshes (`refresh_token`). |
 
 These four routes are served only when `MAINTENANT_MCP=true` and both OAuth credentials are set.
@@ -128,6 +146,7 @@ These four routes are served only when `MAINTENANT_MCP=true` and both OAuth cred
 | `MAINTENANT_MCP_CLIENT_ID` | — | OAuth2 client identifier. Both this and the secret are required for `MAINTENANT_MCP=true`, unless `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` is set. |
 | `MAINTENANT_MCP_CLIENT_SECRET` | — | OAuth2 client secret, at least 32 characters recommended (`openssl rand -hex 32`). |
 | `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` | — | Comma-separated allowlist of remote OAuth2 `redirect_uri` values. Loopback callbacks need no entry. |
+| `MAINTENANT_MCP_READ_ONLY` | `false` | Register only the 34 read-only tools, on `/mcp` and on the local socket. See [Read-only mode](#read-only-mode). |
 | `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` | `false` | Serve `/mcp` with no authentication at all. Without it, `MAINTENANT_MCP=true` with no client credentials refuses to start. Trusted networks only; `--mcp-stdio` never needs it. |
 | `MAINTENANT_BASE_URL` | `http://<MAINTENANT_ADDR>` (`http://127.0.0.1:8080` by default) | Public-facing URL. Used as the OAuth2 issuer and in the metadata endpoints, so set it to the URL clients reach (`https://now.example.com`). |
 

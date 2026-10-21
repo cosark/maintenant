@@ -391,6 +391,8 @@ When `MAINTENANT_MCP_CLIENT_ID` and `MAINTENANT_MCP_CLIENT_SECRET` are both conf
 - **Refresh token rotation**: each use invalidates the old token
 - **Replay detection**: reusing a consumed refresh token revokes the entire token family
 - **Automatic cleanup** of expired tokens every 15 minutes
+- **Scopes**: a token is `read` unless the client asked for `scope=read write`. A `read` token calls the read-only tools only; a write tool answers `tool <name> requires the write scope; this token only grants read` and writes nothing. Any other scope is refused with `invalid_scope`, a refresh keeps the scope it had, and tokens issued before scopes existed count as `read`
+- **Read-only mode**: with `MAINTENANT_MCP_READ_ONLY=true`, the 17 write tools are not registered at all, whatever the scope. Without it, `/mcp` with a `read write` token is an admin API, as powerful as the dashboard
 - **Host header**: with OAuth configured, `/mcp` accepts any `Host`, so a proxy on the same machine can forward the public hostname. With `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` on a loopback listener, a request with a non-loopback `Host` is refused with `403` (the MCP SDK's DNS rebinding protection)
 
 The stdio transport (`--mcp-stdio`) requires no authentication: it relays to the `mcp.sock` Unix socket next to the database, which only the user maintenant runs as can open (mode `0600`).

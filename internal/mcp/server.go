@@ -6,6 +6,7 @@ package mcp
 import (
 	"context"
 	"log/slog"
+	"slices"
 
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/alert"
@@ -130,6 +131,8 @@ type Services struct {
 	Logger   *slog.Logger
 	DemoMode bool
 	ReadOnly bool
+
+	writeTools map[string]struct{}
 }
 
 func (s *Services) logger() *slog.Logger {
@@ -140,10 +143,32 @@ func (s *Services) logger() *slog.Logger {
 }
 
 func addTool[In, Out any](server *gomcp.Server, svc *Services, t *gomcp.Tool, h gomcp.ToolHandlerFor[In, Out]) {
-	if svc.DemoMode && (t.Annotations == nil || !t.Annotations.ReadOnlyHint) {
+	readOnly := t.Annotations != nil && t.Annotations.ReadOnlyHint
+	if !readOnly && (svc.DemoMode || svc.ReadOnly) {
 		return
 	}
+	if !readOnly {
+		svc.writeTools[t.Name] = struct{}{}
+	}
 	gomcp.AddTool(server, t, h)
+}
+
+func requireWriteScope(svc *Services) gomcp.Middleware {
+	return func(next gomcp.MethodHandler) gomcp.MethodHandler {
+		return func(ctx context.Context, method string, req gomcp.Request) (gomcp.Result, error) {
+			call, ok := req.(*gomcp.CallToolRequest)
+			if !ok || call.Extra == nil || call.Extra.TokenInfo == nil || call.Params == nil {
+				return next(ctx, method, req)
+			}
+			if _, write := svc.writeTools[call.Params.Name]; !write || slices.Contains(call.Extra.TokenInfo.Scopes, "write") {
+				return next(ctx, method, req)
+			}
+			return &gomcp.CallToolResult{
+				IsError: true,
+				Content: []gomcp.Content{&gomcp.TextContent{Text: "tool " + call.Params.Name + " requires the write scope; this token only grants read"}},
+			}, nil
+		}
+	}
 }
 
 // NewServer creates and configures an MCP server with all maintenant tools registered.
@@ -156,6 +181,7 @@ func NewServer(svc *Services) *gomcp.Server {
 		Logger:       svc.Logger,
 	})
 
+	svc.writeTools = map[string]struct{}{}
 	registerReadTools(server, svc)
 	registerWriteTools(server, svc)
 	registerEscalationTools(server, svc)
@@ -165,6 +191,7 @@ func NewServer(svc *Services) *gomcp.Server {
 	registerSecurityTools(server, svc)
 	registerKubernetesTools(server, svc)
 	registerSwarmTools(server, svc)
+	server.AddReceivingMiddleware(requireWriteScope(svc))
 
 	return server
 }

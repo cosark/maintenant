@@ -713,6 +713,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		Version:  cfg.Version,
 		Logger:   logger.With("component", "mcp"),
 		DemoMode: cfg.DemoMode,
+		ReadOnly: cfg.MCP.ReadOnly,
 	}
 	a.mcpServer = mcp.NewServer(mcpSvc)
 
