@@ -78,6 +78,22 @@ func (c *Client) FetchLogSnippetSince(ctx context.Context, containerID string, s
 	return snippet, nil
 }
 
+// StartedAt returns the container's recorded start time, or the zero time when it never started.
+func (c *Client) StartedAt(ctx context.Context, containerID string) (time.Time, error) {
+	res, err := c.cli.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+	if err != nil {
+		return time.Time{}, fmt.Errorf("container inspect for start time: %w", err)
+	}
+	if res.Container.State == nil || res.Container.State.StartedAt == "" {
+		return time.Time{}, nil
+	}
+	started, err := time.Parse(time.RFC3339Nano, res.Container.State.StartedAt)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse container start time: %w", err)
+	}
+	return started, nil
+}
+
 // FetchLogSnippet retrieves the last 50 lines of logs for storing as a snippet on exit events.
 func (c *Client) FetchLogSnippet(ctx context.Context, containerID string) (string, error) {
 	return c.FetchLogSnippetSince(ctx, containerID, time.Time{})

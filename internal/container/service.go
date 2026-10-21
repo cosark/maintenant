@@ -54,6 +54,11 @@ type snippetSinceFetcher interface {
 	FetchLogSnippetSince(ctx context.Context, externalID string, since time.Time) (string, error)
 }
 
+// startedAtReader is implemented by runtimes that report a container's recorded start time.
+type startedAtReader interface {
+	StartedAt(ctx context.Context, externalID string) (time.Time, error)
+}
+
 // RestartChecker checks restart thresholds.
 type RestartChecker interface {
 	Check(ctx context.Context, c *Container) (interface{}, error)
@@ -271,7 +276,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 	// Only for local containers: logFetcher targets the server's own runtime and
 	// cannot read logs of a container living on a remote agent's host.
 	if evt.Action == "die" && s.logFetcher != nil && c.AgentID == uid.LocalAgent {
-		snippet, err := s.fetchExitSnippet(ctx, evt.ExternalID)
+		snippet, err := s.fetchExitSnippet(ctx, evt.ExternalID, evt.Timestamp)
 		if err != nil {
 			s.logger.Warn("fetch log snippet", "external_id", shortID(evt.ExternalID), "error", err)
 		} else {
@@ -323,10 +328,20 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 }
 
 // fetchExitSnippet returns the log lines since the container's last known start, or the unbounded snippet when that start is unknown.
-func (s *Service) fetchExitSnippet(ctx context.Context, externalID string) (string, error) {
-	started, ok := s.localStarts.LoadAndDelete(externalID)
-	if f, bounded := s.logFetcher.(snippetSinceFetcher); ok && bounded {
-		return f.FetchLogSnippetSince(ctx, externalID, started.(time.Time))
+func (s *Service) fetchExitSnippet(ctx context.Context, externalID string, exitedAt time.Time) (string, error) {
+	var since time.Time
+	if started, ok := s.localStarts.LoadAndDelete(externalID); ok {
+		since = started.(time.Time)
+	} else if r, ok := s.logFetcher.(startedAtReader); ok {
+		started, err := r.StartedAt(ctx, externalID)
+		if err != nil {
+			s.logger.Debug("read container start time", "external_id", shortID(externalID), "error", err)
+		} else if !started.After(exitedAt) { // a restart policy may already have started the next run
+			since = started
+		}
+	}
+	if f, ok := s.logFetcher.(snippetSinceFetcher); ok && !since.IsZero() {
+		return f.FetchLogSnippetSince(ctx, externalID, since)
 	}
 	return s.logFetcher.FetchLogSnippet(ctx, externalID)
 }

@@ -210,6 +210,11 @@ func (r *Runtime) FetchLogSnippetSince(ctx context.Context, externalID string, s
 	return r.client.FetchLogSnippetSince(ctx, externalID, since)
 }
 
+// StartedAt returns the container's recorded start time, or the zero time when it never started.
+func (r *Runtime) StartedAt(ctx context.Context, externalID string) (time.Time, error) {
+	return r.client.StartedAt(ctx, externalID)
+}
+
 // FetchLogSnippet retrieves the last 50 lines of logs for die event snippets.
 // Satisfies container.LogFetcher interface.
 func (r *Runtime) FetchLogSnippet(ctx context.Context, externalID string) (string, error) {
