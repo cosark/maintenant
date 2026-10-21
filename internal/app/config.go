@@ -543,4 +543,25 @@ func urlHostname(raw string) string {
 }
 
 // AllowedHostSet returns the host names the API and the dashboard answer to.
-func (c Config) AllowedHostSet() map[string]struct{} { panic("not implemented") }
+func (c Config) AllowedHostSet() map[string]struct{} {
+	set := map[string]struct{}{"localhost": {}, "127.0.0.1": {}, "::1": {}}
+	add := func(h string) bool {
+		if h == "" || h == "0.0.0.0" || h == "::" {
+			return false
+		}
+		set[h] = struct{}{}
+		return true
+	}
+	add(hostname(c.Addr))
+	explicit := false
+	for _, entry := range strings.Split(c.AllowedHosts, ",") {
+		if add(hostname(strings.TrimSpace(entry))) {
+			explicit = true
+		}
+	}
+	if !explicit {
+		add(urlHostname(c.BaseURL))
+		add(urlHostname(c.StatusURL))
+	}
+	return set
+}

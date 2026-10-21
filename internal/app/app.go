@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -768,6 +770,19 @@ func multihostPlanPermitted(capabilityGranted bool, licenseStatus string) bool {
 	return capabilityGranted || licenseStatus == extension.LicenseStatusUpdateWindowEnded
 }
 
+// warnDefaultAllowedHosts warns when the server listens beyond the loopback with only the derived host list.
+func (a *App) warnDefaultAllowedHosts() {
+	if a.cfg.AllowedHosts != "" {
+		return
+	}
+	h := hostname(a.cfg.Addr)
+	if ip := net.ParseIP(h); h == "localhost" || (ip != nil && ip.IsLoopback()) {
+		return
+	}
+	a.logger.Warn("MAINTENANT_ALLOWED_HOSTS is not set, accepting the default hosts only",
+		"hosts", slices.Sorted(maps.Keys(a.cfg.AllowedHostSet())))
+}
+
 // Start begins all background services and the HTTP server.
 // It blocks until ctx is canceled, then performs a graceful shutdown.
 func (a *App) Start(ctx context.Context) error {
@@ -787,6 +802,7 @@ func (a *App) Start(ctx context.Context) error {
 		}
 		defer func() { _ = ln.Close() }()
 		httpLn = ln
+		a.warnDefaultAllowedHosts()
 	}
 
 	// Derived so an early return (e.g. a failed gRPC listener below) cancels every

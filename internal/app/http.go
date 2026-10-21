@@ -233,6 +233,22 @@ func statusHostFilter(statusHost, baseHost string, next http.Handler) http.Handl
 	})
 }
 
+// hostGuard answers 421 when the Host of a request outside the public routes is not an accepted one.
+func hostGuard(allowed map[string]struct{}, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if publicPath(p) || p == "/mcp" || strings.HasPrefix(p, "/mcp/") || strings.HasPrefix(p, "/oauth/") || strings.HasPrefix(p, "/.well-known/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if _, ok := allowed[hostname(r.Host)]; !ok {
+			v1.WriteError(w, http.StatusMisdirectedRequest, "misdirected_request", "Host not allowed")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 const minMCPClientSecretLength = 32
 
 // warnWeakMCPClientSecret warns when the only credential the MCP OAuth flow checks is short enough to guess.
@@ -328,7 +344,7 @@ func (a *App) buildHTTPServer() *http.Server {
 	statusHost, _ := a.cfg.StatusHost()
 	handler := SecurityHeaders(contentSecurityPolicy(indexHTML))(
 		WithRequestTimeout(v1.DemoModeGuard(a.cfg.DemoMode, a.cfg.DemoToken)(
-			statusHostFilter(statusHost, urlHostname(a.cfg.BaseURL), topMux)), 10*time.Second))
+			statusHostFilter(statusHost, urlHostname(a.cfg.BaseURL), hostGuard(a.cfg.AllowedHostSet(), topMux))), 10*time.Second))
 
 	return &http.Server{
 		Addr:         a.cfg.Addr,

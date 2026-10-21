@@ -353,6 +353,20 @@ The proxy's session cookie travels with every request a browser makes, including
 
 `/ping/`, `/status/`, `/mcp` and `/oauth/*` are outside this check: they are designed to be called from other origins, and `/mcp` has its own cross-origin check, built into the MCP SDK.
 
+### Host header
+
+A DNS rebinding attack points a domain the attacker controls at the address of your instance, so a page on that domain can read the API and the dashboard from the visitor's browser. maintenant therefore checks the `Host` header: outside the public routes, a request whose host name is not accepted gets `421` with `{"error":{"code":"misdirected_request","message":"Host not allowed"}}`. A request without a `Host` header is refused the same way. The port and the case of the header do not matter.
+
+The accepted host names are `localhost`, `127.0.0.1`, `::1`, the host of `MAINTENANT_ADDR` (unless it is `0.0.0.0` or `::`), and either the entries of `MAINTENANT_ALLOWED_HOSTS` or, when it is not set, the hosts of `MAINTENANT_BASE_URL` and `MAINTENANT_STATUS_URL`:
+
+```bash
+MAINTENANT_ALLOWED_HOSTS=now.example.com,monitor.lan
+```
+
+The check does not apply to `/ping/`, `/status` and `/status/`, `/assets/`, the installable app files (`/manifest.webmanifest`, `/sw.js`, `/registerSW.js`, `/workbox-*`, the icons), `/mcp`, `/oauth/` and `/.well-known/`: the public routes answer any host so they can be embedded and reached through any name, and `/mcp` checks the host itself.
+
+When maintenant listens beyond the loopback without `MAINTENANT_ALLOWED_HOSTS`, it logs one `WARN` at startup listing the hosts it accepts. The proxy must forward the original `Host` (Traefik and Caddy do by default, nginx needs `proxy_set_header Host $host`), and the Kubernetes probes send `Host: localhost`.
+
 ---
 
 ## MCP Authentication
@@ -618,6 +632,7 @@ A quick reference for securing your deployment:
 - [ ] Reverse proxy in front of maintenant with authentication enabled
 - [ ] `/api/v1/*` (`/api/v1/health` included) and `/` require authentication
 - [ ] `/ping`, `/status` (prefix, no trailing slash) and `/assets/` bypass authentication
+- [ ] `MAINTENANT_ALLOWED_HOSTS` lists the host names users reach maintenant by when it listens beyond the loopback
 - [ ] `MAINTENANT_TRUSTED_PROXIES` lists the address maintenant sees the proxy from, and the proxy passes `X-Forwarded-For` and `Host` on
 - [ ] If MCP is enabled: OAuth2 credentials configured (`MAINTENANT_MCP_CLIENT_ID` + `MAINTENANT_MCP_CLIENT_SECRET`), the secret at least 32 random characters
 - [ ] If MCP is enabled: `/mcp`, `/oauth/*`, `/.well-known/*` bypass proxy auth (MCP handles its own)
