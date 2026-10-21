@@ -48,7 +48,9 @@ Set [`MAINTENANT_STATUS_URL`](../getting-started/configuration.md#environment-va
 
 ### Subdomain deployment
 
-When serving the status page from its own subdomain, point the subdomain at the same backend container as the main app and rewrite only the root path to `/status/`. The Vue router detects the dedicated-status context and mounts the public status page at `/`, so the browser URL stays clean (`status.example.com/`) without a visible redirect.
+When serving the status page from its own subdomain, point the subdomain at the same backend container as the main app and set `MAINTENANT_STATUS_URL` to it. On that host, maintenant serves the status page at `/` itself, so the browser URL stays clean (`status.example.com/`), and the Vue router only registers the public page: the dashboard cannot be reached from the subdomain.
+
+The server also answers `404` to every other path on that host: `/api/`, `/mcp`, `/oauth/` and the dashboard pages are refused even if the proxy forwards them. Route only the public paths to the backend anyway:
 
 **Traefik example:**
 
@@ -57,14 +59,16 @@ When serving the status page from its own subdomain, point the subdomain at the 
 traefik.http.routers.maintenant.rule: "Host(`app.example.com`)"
 traefik.http.routers.maintenant.middlewares: "authelia@docker"
 
-# Public status page on status.example.com (no auth, root rewritten to /status/)
-traefik.http.routers.maintenant-status.rule: "Host(`status.example.com`)"
+# Public status page on status.example.com (no auth, public paths only)
+traefik.http.routers.maintenant-status.rule: "Host(`status.example.com`) && (Path(`/`) || PathPrefix(`/status`) || PathPrefix(`/assets/`) || Path(`/manifest.webmanifest`) || Path(`/sw.js`) || Path(`/registerSW.js`) || PathRegexp(`^/workbox-`) || PathRegexp(`^/(favicon|icon|apple-touch-icon|logo)`))"
+
+# Optional: rewrite / to /status/ at the proxy (maintenant already serves / as the status page on that host)
 traefik.http.routers.maintenant-status.middlewares: "status-rewrite@docker"
 traefik.http.middlewares.status-rewrite.replacepathregex.regex: "^/$"
 traefik.http.middlewares.status-rewrite.replacepathregex.replacement: "/status/"
 ```
 
-Use `replacepathregex` (only rewriting `/` to `/status/`), not `addprefix=/status`: the latter would also prepend `/status` to SPA asset paths (`/assets/...`) and SSE endpoints (`/status/events`), causing 404s. All other paths (`/assets/...`, `/status/api`, `/status/events`, `/status/settings.json`) must pass through unchanged.
+If you keep a rewrite, use `replacepathregex` (only rewriting `/` to `/status/`), not `addprefix=/status`: the latter would also prepend `/status` to SPA asset paths (`/assets/...`) and SSE endpoints (`/status/events`), causing 404s. All other paths (`/assets/...`, `/status/api`, `/status/events`, `/status/settings.json`) must pass through unchanged.
 
 Set the matching env var on the backend:
 

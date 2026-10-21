@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -188,6 +189,50 @@ func SecurityHeaders(csp string) func(http.Handler) http.Handler {
 	}
 }
 
+// hostname returns the lowercase host name of a Host header, without port or IPv6 brackets.
+func hostname(h string) string {
+	if host, _, err := net.SplitHostPort(h); err == nil {
+		h = host
+	}
+	return strings.ToLower(strings.Trim(h, "[]"))
+}
+
+// publicPath reports whether p is the public status page, a ping or a file the status page needs.
+func publicPath(p string) bool {
+	switch p {
+	case "/status", "/manifest.webmanifest", "/sw.js", "/registerSW.js", "/apple-touch-icon.png", "/logo.svg":
+		return true
+	}
+	for _, prefix := range []string{"/status/", "/assets/", "/ping/", "/screenshots/", "/workbox-", "/favicon", "/icon"} {
+		if strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// statusHostFilter keeps a dedicated status host to the public paths and serves the status page at its root.
+func statusHostFilter(statusHost, baseHost string, next http.Handler) http.Handler {
+	if statusHost == "" || statusHost == baseHost {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hostname(r.Host) != statusHost {
+			next.ServeHTTP(w, r)
+			return
+		}
+		switch {
+		case r.URL.Path == "/":
+			r.URL.Path = "/status/"
+			next.ServeHTTP(w, r)
+		case publicPath(r.URL.Path):
+			next.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
 const minMCPClientSecretLength = 32
 
 // warnWeakMCPClientSecret warns when the only credential the MCP OAuth flow checks is short enough to guess.
@@ -279,8 +324,11 @@ func (a *App) buildHTTPServer() *http.Server {
 	topMux.Handle("/ping/", a.rl.Middleware(a.router.Handler()))
 	topMux.Handle("/", SPAHandler(a.router.Handler(), a.logger))
 
+	// Start refuses an unreadable MAINTENANT_STATUS_URL through ValidateHTTP.
+	statusHost, _ := a.cfg.StatusHost()
 	handler := SecurityHeaders(contentSecurityPolicy(indexHTML))(
-		WithRequestTimeout(v1.DemoModeGuard(a.cfg.DemoMode, a.cfg.DemoToken)(topMux), 10*time.Second))
+		WithRequestTimeout(v1.DemoModeGuard(a.cfg.DemoMode, a.cfg.DemoToken)(
+			statusHostFilter(statusHost, urlHostname(a.cfg.BaseURL), topMux)), 10*time.Second))
 
 	return &http.Server{
 		Addr:         a.cfg.Addr,

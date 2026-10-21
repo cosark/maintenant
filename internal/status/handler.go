@@ -66,6 +66,7 @@ func (h *Handler) Register(mux *http.ServeMux, mw Middleware) {
 
 	// Page HTML — catch-all for /status/ (more specific patterns below take precedence).
 	mux.Handle("GET /status/", mw(http.HandlerFunc(h.HandleStatusPage)))
+	mux.Handle("GET /status", mw(http.HandlerFunc(h.HandleStatusPage)))
 	// API & SSE endpoints.
 	mux.Handle("GET /status/api", mw(http.HandlerFunc(h.HandleStatusAPI)))
 	mux.Handle("GET /status/events", mw(h.sseHandler))

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -320,6 +321,9 @@ func (c Config) ValidateHTTP() error {
 		(c.MCP.ClientID == "" || c.MCP.ClientSecret == "") {
 		return ErrMCPUnauthenticated
 	}
+	if _, err := c.StatusHost(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -511,8 +515,32 @@ func envDurationOr(key string, fallback time.Duration) time.Duration {
 	return fallback
 }
 
+// ErrStatusURL refuses a status page URL whose host name cannot be read.
+var ErrStatusURL = errors.New("MAINTENANT_STATUS_URL must be an http or https URL with a host, such as https://status.example.com")
+
 // StatusHost returns the lowercase host name of MAINTENANT_STATUS_URL, or "" when it is unset.
-func (c Config) StatusHost() (string, error) { panic("not implemented") }
+func (c Config) StatusHost() (string, error) {
+	if c.StatusURL == "" {
+		return "", nil
+	}
+	u, err := url.Parse(c.StatusURL)
+	if err != nil {
+		return "", fmt.Errorf("%w (%v)", ErrStatusURL, err)
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return "", fmt.Errorf("%w (got %q)", ErrStatusURL, c.StatusURL)
+	}
+	return strings.ToLower(u.Hostname()), nil
+}
+
+// urlHostname returns the lowercase host name of raw, or "" when it has none.
+func urlHostname(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
+}
 
 // AllowedHostSet returns the host names the API and the dashboard answer to.
 func (c Config) AllowedHostSet() map[string]struct{} { panic("not implemented") }

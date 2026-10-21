@@ -36,10 +36,13 @@ These routes **must bypass** your authentication middleware:
 | `/assets/*` | JavaScript and CSS of the web app. Without them the status page stays blank when it shares a host with the protected dashboard | No |
 
 !!! note "Match the prefix, not the exact slash"
-    Route the public matcher on the prefix **without** a trailing slash (`/ping`, `/status`). maintenant answers the bare path with a `307` redirect to its canonical form (`/status` → `/status/`); if your matcher only covers `/status/`, the bare `/status` reaches the authenticated router first and returns 401 before the redirect. `/ping` redirects to `/ping/`, which returns **404**: only `/ping/{token}` is a real endpoint, the prefix just needs to bypass auth so heartbeats reach the app.
+    Route the public matcher on the prefix **without** a trailing slash (`/ping`, `/status`). maintenant serves the status page on both `/status` and `/status/`; if your matcher only covers `/status/`, the bare `/status` reaches the authenticated router and returns 401. `/ping` redirects to `/ping/`, which returns **404**: only `/ping/{token}` is a real endpoint, the prefix just needs to bypass auth so heartbeats reach the app.
 
 !!! note "Optional public routes"
     The web app also requests `/manifest.webmanifest`, `/registerSW.js`, `/sw.js` (with its `workbox-*.js` file) and the icons (`/favicon.svg`, `/favicon.ico`, `/apple-touch-icon.png`) from the root. The status page renders without them. Behind authentication, an anonymous visitor only loses the icons and the PWA features (install, offline cache), and the browser console shows failed requests. The manifest is requested with credentials, so signed-in users still get it.
+
+!!! note "Dedicated status host"
+    When `MAINTENANT_STATUS_URL` points at its own subdomain, maintenant answers `404` on that host to every path outside the public ones above. Restrict the proxy router of that subdomain the same way: see the [Traefik rule in the status page guide](features/status-page.md#subdomain-deployment).
 
 ### MCP & OAuth Routes
 
