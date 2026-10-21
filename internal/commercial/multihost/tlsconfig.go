@@ -93,3 +93,11 @@ func splitHosts(hosts []string) (ips []net.IP, dnsNames []string) {
 	}
 	return ips, dnsNames
 }
+
+// Fingerprint returns the lowercase hex SHA-256 of a certificate's DER bytes.
+func Fingerprint(cert *x509.Certificate) string { panic("not implemented") }
+
+// PersistentSelfSigned loads the self-signed server certificate kept in dataDir, generating and saving it when it is missing, unreadable or expired.
+func PersistentSelfSigned(dataDir string, hosts []string, logger *slog.Logger) (*tls.Config, error) {
+	panic("not implemented")
+}

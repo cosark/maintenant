@@ -161,6 +161,7 @@ type AgentSessions interface {
 	SendCommand(ctx context.Context, agentID, capability string, cmd *agentpb.AgentCommand) (<-chan *agentpb.CommandResult, func(), error)
 	SpoolStatus(agentID string) *agentproto.SpoolState
 	SetLifecycleAlertHook(fn func(agentID, reason string, connected bool))
+	GRPCServerCertificate() (fingerprint string, selfSigned bool)
 	StartWatchers(ctx context.Context, staleThreshold time.Duration, staleAgents func(ctx context.Context, threshold time.Duration) ([]string, error))
 }
 
@@ -171,6 +172,7 @@ type GRPCConfig struct {
 	TLSCertFile string
 	TLSKeyFile  string
 	Insecure    bool
+	DataDir     string
 }
 
 // MultiHost holds the agent session registry and the function that serves agents over gRPC.

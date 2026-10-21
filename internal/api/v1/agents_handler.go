@@ -141,8 +141,15 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 		"consumed_at":          nil,
 		"consumed_by_agent_id": nil,
 		"install_templates":    buildInstallTemplates(publicURL, tokenStr),
-		"warnings":             warnings,
+		// filled by 046 US1
+		"grpc_server_fingerprint_sha256": "",
+		"grpc_server_self_signed":        false,
+		"warnings":                       warnings,
 	})
+}
+
+func buildInstallTemplatesFor(serverURL, token, fingerprint string, selfSigned bool) map[string]string {
+	panic("not implemented")
 }
 
 func buildInstallTemplates(serverURL, token string) map[string]string {

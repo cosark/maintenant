@@ -285,6 +285,11 @@ func (s *AgentStore) InsertToken(ctx context.Context, t *agent.EnrollmentToken) 
 	return nil
 }
 
+// TokenExists reports whether an enrollment token with this hash is stored, whatever its state.
+func (s *AgentStore) TokenExists(ctx context.Context, tokenHash string) (bool, error) {
+	panic("not implemented")
+}
+
 // EnrollAtomic enforces the per-edition host cap, consumes the one-time token,
 // and inserts the agent as a single serialized transaction. Because the count,
 // the token consume, and the insert run in one writer-goroutine transaction, no

@@ -594,3 +594,8 @@ func (s *Sessions) StartStaleWatcher(ctx context.Context, interval, threshold, g
 		}
 	}()
 }
+
+// GRPCServerCertificate returns the SHA-256 fingerprint of the certificate served to agents and whether it is self-signed.
+func (s *Sessions) GRPCServerCertificate() (fingerprint string, selfSigned bool) {
+	panic("not implemented")
+}

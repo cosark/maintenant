@@ -62,6 +62,11 @@ func (c *Client) EnableCommands(rt runtime.Runtime, agentVersion string, logger 
 	c.agentVersion = agentVersion
 }
 
+// NewClientWithFingerprint dials serverURL and trusts only a server certificate whose SHA-256 fingerprint matches.
+func NewClientWithFingerprint(ctx context.Context, serverURL string, fingerprint string, insecureSkipVerify bool, logger *slog.Logger) (*Client, error) {
+	panic("not implemented")
+}
+
 // NewClient dials the server at serverURL and returns a ready-to-use Client.
 // serverURL should start with "grpcs://" (TLS) or "grpc://" (plaintext, not recommended).
 // If insecureSkipVerify is true, TLS certificate validation is skipped (debug only).

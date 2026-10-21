@@ -414,6 +414,12 @@ func init() {
 			},
 		},
 		{
+			EnvName: "MAINTENANT_GRPC_SERVER_FINGERPRINT", FlagName: "grpc-server-fingerprint",
+			Type: FlagTypeString, Default: "",
+			Description: "SHA-256 fingerprint of the server certificate to trust (agent mode)",
+			ApplyTo:     func(c *Config, v string) error { c.MultiHost.ServerFingerprint = v; return nil },
+		},
+		{
 			EnvName: "MAINTENANT_EMBEDDED_AGENT", FlagName: "embedded-agent",
 			Type: FlagTypeBool, Default: "false",
 			Description: "Also run a local agent (server mode, Personal edition or above)",
@@ -581,7 +587,7 @@ func init() {
 		{Name: "Multi-host", Specs: specsFor(
 			"mode", "server", "enrollment-token", "label", "nodeName",
 			"grpc-listen", "grpc-url", "grpc-tls-cert", "grpc-tls-key",
-			"grpc-tls-insecure", "grpc-insecure-skip-tls-verify",
+			"grpc-tls-insecure", "grpc-insecure-skip-tls-verify", "grpc-server-fingerprint",
 			"agentRateLimitPerSecond", "agentStaleThresholdSeconds",
 			"agentSpoolMaxMemoryBytes", "agentSpoolMaxDiskBytes", "agentSpoolMaxAgeSeconds",
 			"embedded-agent", "ca-cert", "data-dir",

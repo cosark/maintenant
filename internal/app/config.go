@@ -119,6 +119,7 @@ type MultiHostConfig struct {
 	Label                    string
 	NodeName                 string
 	InsecureSkipVerify       bool
+	ServerFingerprint        string
 	EmbeddedAgent            bool
 	AgentSpoolMaxMemoryBytes int64
 	AgentSpoolMaxDiskBytes   int64
@@ -442,6 +443,7 @@ func ConfigFromEnv() Config {
 		Label:                      os.Getenv("MAINTENANT_LABEL"),
 		NodeName:                   os.Getenv("MAINTENANT_NODE_NAME"),
 		InsecureSkipVerify:         parseTruthy(os.Getenv("MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY")),
+		ServerFingerprint:          os.Getenv("MAINTENANT_GRPC_SERVER_FINGERPRINT"),
 		EmbeddedAgent:              parseTruthy(os.Getenv("MAINTENANT_EMBEDDED_AGENT")),
 	}
 

@@ -37,6 +37,7 @@ type AgentConfig struct {
 	NodeName            string
 	AgentVersion        string
 	InsecureSkipVerify  bool
+	ServerFingerprint   string
 	ProxyLabels         bool
 	SpoolMaxMemoryBytes int64
 	SpoolMaxDiskBytes   int64
