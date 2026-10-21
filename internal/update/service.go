@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/uid"
@@ -339,7 +340,7 @@ func shellQuote(s string) string {
 }
 
 func hasControl(s string) bool {
-	return strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f })
+	return strings.ContainsFunc(s, unicode.IsControl)
 }
 
 // unsafeFields reports a control character in a value written into a command, which quoting cannot neutralise.
