@@ -957,6 +957,7 @@ func (a *App) Start(ctx context.Context) error {
 				TLSCertFile: a.cfg.MultiHost.TLSCertFile,
 				TLSKeyFile:  a.cfg.MultiHost.TLSKeyFile,
 				Insecure:    a.cfg.MultiHost.InsecureGRPC,
+				DataDir:     filepath.Dir(a.cfg.DBPath),
 			}); err != nil {
 				return fmt.Errorf("start agent gRPC server: %w", err)
 			}
@@ -1090,13 +1091,17 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 	}
 
 	grpcURL := embeddedAgentURL(a.cfg.MultiHost)
+	var fingerprint string
+	if a.agentSessions != nil {
+		fingerprint, _ = a.agentSessions.GRPCServerCertificate()
+	}
 	agentCfg := agent.AgentConfig{
 		DataDir:             agentDataDir,
 		ServerURL:           grpcURL,
 		EnrollmentToken:     enrollToken,
 		Label:               "embedded",
 		AgentVersion:        a.cfg.Version,
-		InsecureSkipVerify:  true, // loopback TLS
+		ServerFingerprint:   fingerprint,
 		ProxyLabels:         a.cfg.ProxyLabels,
 		SpoolMaxMemoryBytes: a.cfg.MultiHost.AgentSpoolMaxMemoryBytes,
 		SpoolMaxDiskBytes:   a.cfg.MultiHost.AgentSpoolMaxDiskBytes,

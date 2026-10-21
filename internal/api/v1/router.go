@@ -35,6 +35,7 @@ import (
 type AgentSessions interface {
 	IsConnected(agentID string) bool
 	Close(agentID, reason string)
+	GRPCServerCertificate() (fingerprint string, selfSigned bool)
 }
 
 // ErrorResponse represents the standard JSON error format.

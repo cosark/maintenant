@@ -162,6 +162,7 @@ Every `MAINTENANT_*` environment variable in the table has a CLI equivalent. Pre
 | `--grpc-url` | `MAINTENANT_GRPC_URL` | string | _(unset)_ |
 | `--grpc-tls-cert` | `MAINTENANT_GRPC_TLS_CERT` | string | _(unset)_ |
 | `--grpc-tls-key` | `MAINTENANT_GRPC_TLS_KEY` | string | _(unset)_ |
+| `--grpc-server-fingerprint` | `MAINTENANT_GRPC_SERVER_FINGERPRINT` | string | _(unset)_ |
 | `--grpc-insecure-skip-tls-verify` | `MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY` | bool | `false` |
 | `--embedded-agent` | `MAINTENANT_EMBEDDED_AGENT` | bool | `false` |
 | `--grpc-tls-insecure` | `MAINTENANT_GRPC_TLS_INSECURE` | bool | `false` |
