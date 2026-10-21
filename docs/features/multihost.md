@@ -373,6 +373,24 @@ The Agents page shows each agent's runtime (the one the agent detected, reported
 | Key compromise | Revoke the agent from the UI; re-enrolling generates a new keypair |
 | Edition enforcement | All `/api/v1/agents/*` endpoints return `403 EDITION_REQUIRED` below Personal, naming the capability and the edition that grants it |
 
+### gRPC listener limits
+
+These bounds are fixed, not configurable:
+
+| Limit | Value | Beyond it |
+|-------|-------|-----------|
+| Size of a received message | 1 MiB (1,048,576 bytes) | `ResourceExhausted`, the message is not processed |
+| Concurrent streams per connection | 32 | the extra stream is refused |
+| Connection handshake | 30 s | the connection is closed |
+| Connection without any stream | 5 min | closed with `GOAWAY`; the agent reconnects. Server keep-alive pings every 60 s |
+| Authentication of a `Push` stream, from the challenge to a verified answer | 30 s | `DeadlineExceeded` `authentication timed out`, the stream is closed |
+| `RegisterAgent` calls and `Push` openings per source address | 10 per minute, burst of 10 | `ResourceExhausted` `too many connection attempts from this address` |
+| `hostname` / `os_arch` / `agent_version` at enrollment | 253 / 32 / 64 characters | `InvalidArgument` naming the field |
+| Containers in one inventory | 10,000 | the inventory is refused whole (`invalid_argument` stream error), nothing is written |
+| Labels on one container | 256 labels | same as above |
+
+`agent_id` must be a UUID, at enrollment and in the authentication answer; it is stored and matched in lower case. An unknown enrollment token is refused with `NotFound` by a read, before any write transaction. The per-address quota applies only before authentication, and it is keyed on the TCP peer address: agents behind the same NAT, or a gRPC listener behind a TCP proxy, share one quota. Authenticated streams keep their per-agent event limit (`MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND`).
+
 ### `--grpc-insecure-skip-tls-verify`
 
 A workaround that disables certificate verification: anyone on the network path could impersonate the server. The agent logs a warning on every connection, reconnections included. Agents enrolled with it keep working; restart them with `--grpc-server-fingerprint` set to the fingerprint the server logs to verify the server again. Given together with a fingerprint, the fingerprint is still checked.

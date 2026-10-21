@@ -287,7 +287,15 @@ func (s *AgentStore) InsertToken(ctx context.Context, t *agent.EnrollmentToken) 
 
 // TokenExists reports whether an enrollment token with this hash is stored, whatever its state.
 func (s *AgentStore) TokenExists(ctx context.Context, tokenHash string) (bool, error) {
-	panic("not implemented")
+	var one int
+	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM enrollment_tokens WHERE token_hash = ?`, tokenHash).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check token exists: %w", err)
+	}
+	return true, nil
 }
 
 // EnrollAtomic enforces the per-edition host cap, consumes the one-time token,
