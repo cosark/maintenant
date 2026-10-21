@@ -612,7 +612,9 @@ Outbound heartbeats go through the same guard and have no way to disable it. Dis
 
 `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS=true` turns off both the HTTPS requirement at creation and the address checks for webhooks and channels, for a lab or a receiver on your own network. Leave it unset in production.
 
-Endpoint and certificate monitors are not subject to this guard: probing internal addresses is their purpose. Anyone who can create a monitor through the API can make the server probe your network, which is one more reason to keep the API behind authentication.
+Endpoint and certificate monitors created through the API are not subject to this guard: probing internal addresses is their purpose. Anyone who can create a monitor through the API can make the server probe your network, which is one more reason to keep the API behind authentication.
+
+Setting a container label creates a monitor, and anyone who can start a container can set one, so label-declared monitors are bounded, on the server and on an agent. They send only `GET` or `HEAD`, drop the `Authorization`, `Cookie` and `Proxy-Authorization` headers, and may reach private and loopback addresses but not link-local (including `169.254.169.254`), multicast or unspecified ones. That last rule is checked on the address actually dialled and on every redirect, for HTTP, TCP and certificate checks. `MAINTENANT_LABEL_ENDPOINTS_ALLOW_LINK_LOCAL=true` lifts it, for tests only. See [Docker labels](guides/docker-labels.md#where-a-label-declared-check-may-go).
 
 ### Outgoing mail
 
