@@ -306,6 +306,17 @@ func (s *AgentStore) TokenExists(ctx context.Context, tokenHash string) (bool, e
 // ErrHostLimitReached, ErrTokenNotFound, ErrTokenAlreadyConsumed, or
 // ErrTokenExpired.
 func (s *AgentStore) EnrollAtomic(ctx context.Context, limit int, tokenCleartext string, a *agent.Agent) error {
+	var err error
+	// A concurrent read can make SQLite refuse the write upgrade once (BUSY_SNAPSHOT); retrying the whole transaction is its documented remedy.
+	for attempt := 0; attempt < 3; attempt++ {
+		if err = s.enrollTx(ctx, limit, tokenCleartext, a); !IsBusy(err) {
+			return err
+		}
+	}
+	return err
+}
+
+func (s *AgentStore) enrollTx(ctx context.Context, limit int, tokenCleartext string, a *agent.Agent) error {
 	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
 		if err := tx.Serialize(ctx, "agents"); err != nil {
 			return err
