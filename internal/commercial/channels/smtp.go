@@ -26,6 +26,8 @@ type SMTPConfig struct {
 	Username string
 	Password string
 	From     string
+
+	AllowPlaintext bool
 }
 
 const implicitTLSPort = "465"

@@ -78,6 +78,8 @@ type SMTPConfig struct {
 	Username string
 	Password string
 	From     string
+
+	AllowPlaintext bool
 }
 
 // StatusPageDeps is what the status page extensions are built from.

@@ -162,6 +162,8 @@ type SMTPConfig struct {
 	Username string
 	Password string
 	From     string
+
+	AllowPlaintext bool
 }
 
 // MCPConfig holds Model Context Protocol server configuration.
@@ -379,6 +381,8 @@ func ConfigFromEnv() Config {
 			Username: os.Getenv("MAINTENANT_SMTP_USERNAME"),
 			Password: os.Getenv("MAINTENANT_SMTP_PASSWORD"),
 			From:     envOr("MAINTENANT_SMTP_FROM", "maintenant@localhost"),
+
+			AllowPlaintext: parseTruthy(os.Getenv("MAINTENANT_SMTP_ALLOW_PLAINTEXT")),
 		},
 
 		MCP: MCPConfig{

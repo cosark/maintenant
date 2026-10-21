@@ -235,6 +235,15 @@ func init() {
 			Description: "SMTP sender address",
 			ApplyTo:     func(c *Config, v string) error { c.SMTP.From = v; return nil },
 		},
+		{
+			EnvName: "MAINTENANT_SMTP_ALLOW_PLAINTEXT", FlagName: "smtpAllowPlaintext",
+			Type: FlagTypeBool, Default: "false",
+			Description: "Allow SMTP without STARTTLS on ports other than 465",
+			ApplyTo: func(c *Config, v string) error {
+				c.SMTP.AllowPlaintext = parseTruthy(v)
+				return nil
+			},
+		},
 		// MCP
 		{
 			EnvName: "MAINTENANT_MCP", FlagName: "mcp",
@@ -578,7 +587,7 @@ func init() {
 		{Name: "Updates", Specs: specsFor("updateInterval", "disableOsEolRefresh")},
 		{Name: "Security", Specs: specsFor("securityScoreThreshold", "disableTelemetry", "allowPrivateWebhooks")},
 		{Name: "License (Personal and Pro)", Specs: specsFor("licenseKey")},
-		{Name: "SMTP", Specs: specsFor("smtpHost", "smtpPort", "smtpUsername", "smtpPassword", "smtpFrom")},
+		{Name: "SMTP", Specs: specsFor("smtpHost", "smtpPort", "smtpUsername", "smtpPassword", "smtpFrom", "smtpAllowPlaintext")},
 		{Name: "MCP", Specs: specsFor(
 			"mcp", "mcpClientId", "mcpClientSecret",
 			"mcpAllowedRedirectUris", "mcpAllowUnauthenticated",

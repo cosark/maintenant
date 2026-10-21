@@ -138,3 +138,8 @@ func (s *SubscriberService) Start(ctx context.Context) {
 		}
 	}
 }
+
+// ConfirmationsThisHour returns how many confirmation emails were sent in the current hour.
+func (s *SubscriberService) ConfirmationsThisHour() int {
+	panic("not implemented")
+}

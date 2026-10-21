@@ -375,6 +375,8 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		Username: cfg.SMTP.Username,
 		Password: cfg.SMTP.Password,
 		From:     cfg.SMTP.From,
+
+		AllowPlaintext: cfg.SMTP.AllowPlaintext,
 	}
 	a.notifier = alert.NewNotifier(channelStore, logger, cfg.AllowPrivateWebhooks, alert.WithBaseURL(cfg.BaseURL))
 	if a.ext.Channels != nil {

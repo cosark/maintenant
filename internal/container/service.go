@@ -49,6 +49,11 @@ type LogFetcher interface {
 	FetchLogSnippet(ctx context.Context, externalID string) (string, error)
 }
 
+// snippetSinceFetcher is implemented by runtimes that can bound a log snippet to a start time.
+type snippetSinceFetcher interface {
+	FetchLogSnippetSince(ctx context.Context, externalID string, since time.Time) (string, error)
+}
+
 // RestartChecker checks restart thresholds.
 type RestartChecker interface {
 	Check(ctx context.Context, c *Container) (interface{}, error)

@@ -4,6 +4,7 @@
 package container
 
 import (
+	"log/slog"
 	"strconv"
 	"strings"
 )
@@ -90,4 +91,9 @@ func agentLabelFields(labels map[string]string) *Container {
 	applyAgentLabels(c, labels)
 	c.ApplySwarmTaskLabels(labels)
 	return c
+}
+
+// WarnUnknownLabels logs a warning for each unrecognised maintenant.* label on a container.
+func WarnUnknownLabels(containerID string, labels map[string]string, logger *slog.Logger) {
+	panic("not implemented")
 }

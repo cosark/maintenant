@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/client"
@@ -45,6 +46,11 @@ func (c *Client) FetchLogs(ctx context.Context, containerID string, lines int, t
 	defer func() { _ = reader.Close() }()
 
 	return demuxLogs(reader)
+}
+
+// FetchLogSnippetSince retrieves the log lines emitted after since, for a snippet on exit events.
+func (c *Client) FetchLogSnippetSince(ctx context.Context, containerID string, since time.Time) (string, error) {
+	panic("not implemented")
 }
 
 // FetchLogSnippet retrieves the last 50 lines of logs for storing as a snippet on exit events.
