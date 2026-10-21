@@ -330,15 +330,17 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 // fetchExitSnippet returns the log lines since the container's last known start, or the unbounded snippet when that start is unknown.
 func (s *Service) fetchExitSnippet(ctx context.Context, externalID string, exitedAt time.Time) (string, error) {
 	var since time.Time
-	if started, ok := s.localStarts.LoadAndDelete(externalID); ok {
-		since = started.(time.Time)
-	} else if r, ok := s.logFetcher.(startedAtReader); ok {
+	// The start event can be stamped after the first log lines; the runtime's recorded start always precedes them.
+	if r, ok := s.logFetcher.(startedAtReader); ok {
 		started, err := r.StartedAt(ctx, externalID)
 		if err != nil {
 			s.logger.Debug("read container start time", "external_id", shortID(externalID), "error", err)
-		} else if !started.After(exitedAt) { // a restart policy may already have started the next run
+		} else if !started.IsZero() && !started.After(exitedAt) { // a restart policy may already have started the next run
 			since = started
 		}
+	}
+	if started, ok := s.localStarts.LoadAndDelete(externalID); ok && since.IsZero() {
+		since = started.(time.Time)
 	}
 	if f, ok := s.logFetcher.(snippetSinceFetcher); ok && !since.IsZero() {
 		return f.FetchLogSnippetSince(ctx, externalID, since)

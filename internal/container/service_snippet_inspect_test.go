@@ -67,3 +67,28 @@ func TestService_ProcessEvent_DieSnippetUnboundedWithoutRuntimeStart(t *testing.
 		})
 	}
 }
+
+func TestService_ProcessEvent_DieSnippetPrefersTheRuntimeStart(t *testing.T) {
+	exitedAt := time.Now()
+	fetcher := &inspectLogFetcher{startedAt: exitedAt.Add(-time.Minute)}
+	store := newSvcStore()
+	c := makeTestContainer(extID("stamped-late"), StateExited)
+	store.seed(c)
+	c, err := store.GetContainerByExternalID(context.Background(), c.AgentID, c.ExternalID)
+	require.NoError(t, err)
+	svc := newTestService(store, func(d *Deps) { d.LogFetcher = fetcher })
+
+	start := makeTestEvent("start", c.ExternalID)
+	start.Timestamp = fetcher.startedAt.Add(50 * time.Millisecond)
+	svc.ProcessEvent(context.Background(), start)
+	die := makeTestEvent("die", c.ExternalID)
+	die.Timestamp = exitedAt
+	die.ExitCode = "1"
+	svc.ProcessEvent(context.Background(), die)
+
+	require.Len(t, fetcher.sinces, 1)
+	assert.True(t, fetcher.sinces[0].Equal(fetcher.startedAt), "since %s must be the runtime start %s, not the later event %s", fetcher.sinces[0], fetcher.startedAt, start.Timestamp)
+	assert.Equal(t, 0, fetcher.calls)
+	_, kept := svc.localStarts.Load(c.ExternalID)
+	assert.False(t, kept, "the recorded start event is consumed by the exit")
+}
