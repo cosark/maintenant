@@ -329,10 +329,10 @@ func composeDir(c ContainerInfo) string {
 
 // shellQuote leaves a plain word as is and wraps anything else in POSIX single quotes.
 func shellQuote(s string) string {
-	plain := s != "" && !strings.ContainsFunc(s, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_./:@-", r))
-	})
-	if plain {
+	plainRune := func(r rune) bool {
+		return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_./:@-", r)
+	}
+	if s != "" && strings.IndexFunc(s, func(r rune) bool { return !plainRune(r) }) < 0 {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
