@@ -303,7 +303,7 @@ labels:
 Create a monitor, get a URL, add one `curl` to the job. maintenant tracks start and finish, duration, exit code, and alerts when the deadline is missed. Outbound heartbeats let two maintenant instances watch each other, so a dead monitor does not go unnoticed.
 
 ```bash
-curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/$?
+curl -fsS -o /dev/null https://now.example.com/ping/{token}/$?
 ```
 
 ### [TLS certificate monitoring](https://docs.maintenant.dev/features/certificates/)
@@ -392,7 +392,7 @@ volumes:
 
 ## Security model
 
-- **No built-in authentication, by design.** Like Dozzle and Prometheus, maintenant sits behind your reverse proxy and auth middleware (Traefik or Caddy, Authelia or Authentik). `/ping/{uuid}` and `/status/` are meant to stay public. [Reverse proxy setup](https://docs.maintenant.dev/security/#reverse-proxy-setup).
+- **No built-in authentication, by design.** Like Dozzle and Prometheus, maintenant sits behind your reverse proxy and auth middleware (Traefik or Caddy, Authelia or Authentik). `/ping/{token}` and `/status/` are meant to stay public. [Reverse proxy setup](https://docs.maintenant.dev/security/#reverse-proxy-setup).
 - **Read-only everywhere.** Docker socket mounted `:ro`, read-only RBAC on Kubernetes, read-only agents. maintenant never starts, stops or modifies a container. A [socket proxy](https://docs.maintenant.dev/security/#recommended-docker-socket-proxy) is supported if you would rather not mount the socket at all.
 - **Hardened container.** Drops to `nobody` (uid 65534) once it has fixed the ownership of its volume, `read_only` root filesystem, `no-new-privileges`.
 - **Anonymous, opt-out telemetry.** One snapshot per hour: counts of monitored objects, edition, storage engine, version and runtime figures (OS, architecture, CPU cores, memory). No hostnames, IPs, names, URLs or keys, ever. `MAINTENANT_DISABLE_TELEMETRY=1` turns it off with no background goroutine and no outbound packet. [Exact payload and details](https://docs.maintenant.dev/getting-started/configuration/#telemetry).

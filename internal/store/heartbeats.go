@@ -33,10 +33,9 @@ const heartbeatColumns = `id, agent_id, name, status, alert_state,
 	last_ping_at, next_deadline_at, current_run_started_at,
 	last_exit_code, last_duration_ms,
 	consecutive_failures, consecutive_successes,
-	created_at, updated_at`
+	created_at, updated_at, ping_token`
 
-// CreateHeartbeat upserts a heartbeat. Its id is the public ping token: the
-// caller supplies it via h.ID, falling back to a fresh UUID when empty.
+// CreateHeartbeat upserts a heartbeat with the ping token it carries, minting its id when empty.
 func (s *HeartbeatStore) CreateHeartbeat(ctx context.Context, h *heartbeat.Heartbeat) (string, error) {
 	if h.ID == "" {
 		h.ID = uid.New()
@@ -47,15 +46,15 @@ func (s *HeartbeatStore) CreateHeartbeat(ctx context.Context, h *heartbeat.Heart
 		`INSERT INTO heartbeats (id, agent_id, name, status, alert_state,
 			interval_seconds, grace_seconds,
 			consecutive_failures, consecutive_successes,
-			created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
+			created_at, updated_at, ping_token)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name, interval_seconds=excluded.interval_seconds,
 			grace_seconds=excluded.grace_seconds,
 			updated_at=excluded.updated_at`,
 		h.ID, h.AgentID, h.Name, string(heartbeat.StatusNew), string(heartbeat.AlertNormal),
 		h.IntervalSeconds, h.GraceSeconds,
-		now, now,
+		now, now, h.PingToken,
 	)
 	if err != nil {
 		return "", fmt.Errorf("insert heartbeat: %w", err)
@@ -449,7 +448,7 @@ func (s *HeartbeatStore) scanHeartbeat(row rowScanner) (*heartbeat.Heartbeat, er
 		&lastPingAt, &nextDeadlineAt, &currentRunStartedAt,
 		&lastExitCode, &lastDurationMs,
 		&h.ConsecutiveFailures, &h.ConsecutiveSuccesses,
-		&createdAt, &updatedAt,
+		&createdAt, &updatedAt, &h.PingToken,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -592,10 +591,19 @@ func scanExecutionSingle(row *sql.Row) (*heartbeat.HeartbeatExecution, error) {
 
 // GetHeartbeatByPingToken returns the heartbeat answering to a ping token, or nil when none does.
 func (s *HeartbeatStore) GetHeartbeatByPingToken(ctx context.Context, token string) (*heartbeat.Heartbeat, error) {
-	panic("not implemented")
+	return s.scanHeartbeat(s.db.QueryRowContext(ctx,
+		`SELECT `+heartbeatColumns+` FROM heartbeats WHERE ping_token=?`, token))
 }
 
 // RotatePingToken replaces the ping token of a heartbeat.
 func (s *HeartbeatStore) RotatePingToken(ctx context.Context, id, token string) error {
-	panic("not implemented")
+	res, err := s.writer.Exec(ctx,
+		`UPDATE heartbeats SET ping_token=?, updated_at=? WHERE id=?`, token, time.Now().Unix(), id)
+	if err != nil {
+		return fmt.Errorf("rotate ping token of heartbeat %s: %w", id, err)
+	}
+	if res.RowsAffected == 0 {
+		return heartbeat.ErrHeartbeatNotFound
+	}
+	return nil
 }

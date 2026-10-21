@@ -10,7 +10,7 @@ The REST API lives under `/api/v1/`. Requests and responses are JSON unless a ro
 
 maintenant has no built-in authentication for the dashboard or the REST API. Every `/api/` route answers anyone who can reach the listener, so put the instance behind a reverse proxy or an authentication proxy (see [Security](../security.md)). Three surfaces are open on purpose:
 
-- `/ping/{uuid}`: heartbeat pings. The UUID is the only secret.
+- `/ping/{token}`: heartbeat pings. The ping token is the only secret.
 - `/status/`: the public status page, its JSON snapshot, its event stream and its subscription links.
 - `/mcp`: protected by its own OAuth 2.0 flow (see [MCP and OAuth routes](#mcp-and-oauth-routes)).
 
@@ -235,18 +235,20 @@ All routes are open in every edition, except that creating a heartbeat monitor i
 | `DELETE` | `/api/v1/heartbeats/{id}` | Delete a heartbeat monitor | — |
 | `POST` | `/api/v1/heartbeats/{id}/pause` | Pause deadline checking | — |
 | `POST` | `/api/v1/heartbeats/{id}/resume` | Resume deadline checking | — |
+| `POST` | `/api/v1/heartbeats/{id}/rotate-token` | Replace the ping token | — |
 | `GET` | `/api/v1/heartbeats/{id}/executions` | List executions | — |
 | `GET` | `/api/v1/heartbeats/{id}/pings` | List raw pings | — |
 | `GET` | `/api/v1/heartbeats/{id}/uptime/daily` | Daily uptime percentages | — |
 
-A heartbeat has `id` (which is also its ping token), `name`, `status` (`new`, `up`, `down`, `started` or `paused`), `alert_state`, `interval_seconds`, `grace_seconds`, the last ping and deadline fields, the consecutive counters and timestamps. The deadline is the last ping plus the interval plus the grace period.
+A heartbeat has `id`, `ping_token` (the secret of its ping URL, distinct from the id), `name`, `status` (`new`, `up`, `down`, `started` or `paused`), `alert_state`, `interval_seconds`, `grace_seconds`, the last ping and deadline fields, the consecutive counters and timestamps. The deadline is the last ping plus the interval plus the grace period.
 
 - `POST /api/v1/heartbeats` body: `name` (required, 1 to 255 characters), `interval_seconds` (required, 60 to 604800) and `grace_seconds` (0 to the interval, default 0). Answers `201` with the heartbeat object. The cap counts every heartbeat, paused and agent-relayed ones included.
 - `PUT /api/v1/heartbeats/{id}` takes the same fields, all optional.
 - `GET /api/v1/heartbeats`: query parameters `status` and `agent_id`; answers `{ "heartbeats", "total" }`.
 - `GET /api/v1/heartbeats/{id}` answers `{ "heartbeat", "snippets" }`; `snippets` holds ready-to-paste `curl`, `wget`, `python`, `go`, `bash` and `docker_healthcheck` snippets once `MAINTENANT_BASE_URL` is set.
 - `executions` (`limit` default 20, at most 500, and `offset`) answers `{ "executions", "total" }`, newest first; each has an `outcome` of `success`, `failure`, `timeout` or `in_progress`. `pings` (`limit` default 50, at most 500, and `offset`) answers `{ "pings", "total" }` with `expected_at` and `grace_deadline` computed for each ping.
-- `pause`, `resume` and `PUT` answer `200` with the heartbeat; `DELETE` answers `204`. Deleting is a hard delete: the monitor, its pings, executions, pauses and daily uptime are removed, and its id answers `404` afterwards, on these routes and on `/ping/`.
+- `rotate-token` answers `200` with the heartbeat and its new `ping_token`; the old token answers `404` on `/ping/` from the next request on, and an unknown id answers `404 HEARTBEAT_NOT_FOUND`.
+- `pause`, `resume` and `PUT` answer `200` with the heartbeat; `DELETE` answers `204`. Deleting is a hard delete: the monitor, its pings, executions, pauses and daily uptime are removed, and its id answers `404` afterwards on these routes, and its token on `/ping/`.
 
 Errors:
 
@@ -260,11 +262,11 @@ These routes need no credentials: the UUID of the heartbeat is the secret. They 
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET/POST` | `/ping/{uuid}` | Simple ping (success) |
-| `GET/POST` | `/ping/{uuid}/start` | Signal job start |
-| `GET/POST` | `/ping/{uuid}/{exit_code}` | Ping with exit code (0 = success) |
+| `GET/POST` | `/ping/{token}` | Simple ping (success) |
+| `GET/POST` | `/ping/{token}/start` | Signal job start |
+| `GET/POST` | `/ping/{token}/{exit_code}` | Ping with exit code (0 = success) |
 
-- `/ping/{uuid}` and `/ping/{uuid}/start` answer `200 {"ok": true}`. `/ping/{uuid}/{exit_code}` answers `200 {"ok": true, "exit_code": n}`. A non-zero exit code raises an alert.
+- `/ping/{token}` and `/ping/{token}/start` answer `200 {"ok": true}`. `/ping/{token}/{exit_code}` answers `200 {"ok": true, "exit_code": n}`. A non-zero exit code raises an alert.
 - Errors: `404 HEARTBEAT_NOT_FOUND` (unknown or deleted heartbeat), `400 INVALID_EXIT_CODE` (not an integer between 0 and 255, checked before the lookup) and `500 INTERNAL_ERROR`.
 - A `POST` body of up to 10 KiB is read but never stored.
 - The `source_ip` of a ping is the client address resolved like the rate limit does: forwarded headers are believed only when the connection comes from a proxy listed in `MAINTENANT_TRUSTED_PROXIES`.

@@ -121,8 +121,7 @@ export function resumeHeartbeat(id: string): Promise<Heartbeat> {
 }
 
 export function rotatePingToken(id: string): Promise<Heartbeat> {
-  void id
-  throw new Error('not implemented')
+  return fetchJSON<Heartbeat>(`${API_BASE}/heartbeats/${id}/rotate-token`, { method: 'POST' })
 }
 
 export function listExecutions(id: string, params?: { limit?: number; offset?: number }): Promise<ExecutionsResponse> {

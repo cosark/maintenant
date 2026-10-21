@@ -22,9 +22,9 @@ These routes **must bypass** your authentication middleware:
 
 | Route | Purpose | Rate Limited |
 |-------|---------|:------------:|
-| `/ping/{uuid}` | Heartbeat ping, called by cron jobs, CI/CD pipelines, external services | Yes |
-| `/ping/{uuid}/start` | Job start signal for duration tracking | Yes |
-| `/ping/{uuid}/{exit_code}` | Job completion with exit code | Yes |
+| `/ping/{token}` | Heartbeat ping, called by cron jobs, CI/CD pipelines, external services | Yes |
+| `/ping/{token}/start` | Job start signal for duration tracking | Yes |
+| `/ping/{token}/{exit_code}` | Job completion with exit code | Yes |
 | `/status/` | Status page (the web app, served at `/status`) | Yes |
 | `/status/api` | Status page JSON API | Yes |
 | `/status/settings.json` | Status page appearance settings | Yes |
@@ -36,7 +36,7 @@ These routes **must bypass** your authentication middleware:
 | `/assets/*` | JavaScript and CSS of the web app. Without them the status page stays blank when it shares a host with the protected dashboard | No |
 
 !!! note "Match the prefix, not the exact slash"
-    Route the public matcher on the prefix **without** a trailing slash (`/ping`, `/status`). maintenant answers the bare path with a `307` redirect to its canonical form (`/status` → `/status/`); if your matcher only covers `/status/`, the bare `/status` reaches the authenticated router first and returns 401 before the redirect. `/ping` redirects to `/ping/`, which returns **404**: only `/ping/{uuid}` is a real endpoint, the prefix just needs to bypass auth so heartbeats reach the app.
+    Route the public matcher on the prefix **without** a trailing slash (`/ping`, `/status`). maintenant answers the bare path with a `307` redirect to its canonical form (`/status` → `/status/`); if your matcher only covers `/status/`, the bare `/status` reaches the authenticated router first and returns 401 before the redirect. `/ping` redirects to `/ping/`, which returns **404**: only `/ping/{token}` is a real endpoint, the prefix just needs to bypass auth so heartbeats reach the app.
 
 !!! note "Optional public routes"
     The web app also requests `/manifest.webmanifest`, `/registerSW.js`, `/sw.js` (with its `workbox-*.js` file) and the icons (`/favicon.svg`, `/favicon.ico`, `/apple-touch-icon.png`) from the root. The status page renders without them. Behind authentication, an anonymous visitor only loses the icons and the PWA features (install, offline cache), and the browser console shows failed requests. The manifest is requested with credentials, so signed-in users still get it.
@@ -291,7 +291,7 @@ Which address a quota is counted against is decided by
 | Header | Value | Sent on | Purpose |
 |--------|-------|---------|---------|
 | `X-Content-Type-Options` | `nosniff` | Every response | Stops the browser from re-guessing a declared content type |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` | Every response | Keeps paths (which can carry heartbeat UUIDs) out of cross-origin referrers |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Every response | Keeps paths (which can carry heartbeat ping tokens) out of cross-origin referrers |
 | `X-Frame-Options` | `DENY` | Every response except `/status` and `/status/*` | Clickjacking defence for browsers that ignore CSP |
 | `Content-Security-Policy` | see below | Every response | Defence in depth if an XSS ever lands |
 
@@ -414,7 +414,7 @@ Credentials that maintenant only has to verify are stored hashed, so a copy of t
 | License key | Signature verified with a build-injected public key; disk cache is `0600` |
 | Notification channel URL, headers and credential (the Telegram bot token) | Clear text. The API never returns the credential |
 | Webhook signing secret | Clear text. The API never returns it after creation |
-| Heartbeat UUIDs and outbound heartbeat URLs | Clear text: the UUID is the access control of a ping URL |
+| Heartbeat ping tokens and outbound heartbeat URLs | Clear text: the token is the access control of a ping URL, and the dashboard has to show it |
 
 Status page subscriber tokens (`confirm_token`, `unsub_token`) are also stored in the clear. They only confirm or cancel an email subscription, and the same table holds the subscriber addresses in the clear by nature, so hashing them would not protect the sensitive part of that table.
 
@@ -569,14 +569,14 @@ the transport defaults and what reaches the logs, and
 
 **On an agent host**, the data directory (`MAINTENANT_DATA_DIR`, `/var/lib/maintenant` by default) holds the agent's private key in `identity.json` and `spool.db`, a SQLite queue of the events waiting for the server to be reachable. Restrict it like the server's database.
 
-### Heartbeat UUIDs
+### Heartbeat Ping Tokens
 
-Ping URLs (`/ping/{uuid}`) use UUIDs as the sole access control. Anyone who knows the UUID can send pings.
+Ping URLs (`/ping/{token}`) use the heartbeat's ping token as the sole access control. Anyone who knows the token can send pings. The token is distinct from the heartbeat `id`, and `/ping/{id}` never resolves a heartbeat.
 
-- Treat heartbeat UUIDs as **secrets**.
+- Treat ping tokens as **secrets**.
 - Do not commit them to public repositories.
 - Do not log them in CI/CD output.
-- Rotate a heartbeat's UUID by deleting and recreating it if you suspect a leak.
+- If you suspect a leak, rotate the token with `POST /api/v1/heartbeats/{id}/rotate-token` or the **Rotate token** button of the heartbeat detail panel. The old token answers 404 from the next request on; the heartbeat keeps its id and its history.
 
 ### Webhook URLs
 
@@ -626,5 +626,5 @@ A quick reference for securing your deployment:
 - [ ] `Strict-Transport-Security` set at the proxy (the app cannot set it safely)
 - [ ] `MAINTENANT_BASE_URL` set to your public HTTPS URL
 - [ ] Database file has restrictive permissions
-- [ ] Heartbeat UUIDs not exposed in public repositories or logs
+- [ ] Heartbeat ping tokens not exposed in public repositories or logs
 - [ ] `MAINTENANT_CORS_ORIGINS` unset unless a page on another origin calls the API, then listing exactly those origins (`*` does not allow writes)

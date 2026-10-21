@@ -28,7 +28,7 @@ func NewPingHandler(svc *heartbeat.Service, clientIP *ratelimit.ClientIPResolver
 func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 	uuid := r.PathValue("uuid")
 	if uuid == "" {
-		WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this UUID")
+		WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this token")
 		return
 	}
 
@@ -49,7 +49,7 @@ func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 	_, err := h.svc.ProcessPing(r.Context(), uuid, sourceIP, r.Method, payload, nil)
 	if err != nil {
 		if errors.Is(err, heartbeat.ErrHeartbeatNotFound) {
-			WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this UUID")
+			WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this token")
 			return
 		}
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to process ping")
@@ -63,7 +63,7 @@ func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 func (h *PingHandler) HandleStartPing(w http.ResponseWriter, r *http.Request) {
 	uuid := r.PathValue("uuid")
 	if uuid == "" {
-		WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this UUID")
+		WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this token")
 		return
 	}
 
@@ -72,7 +72,7 @@ func (h *PingHandler) HandleStartPing(w http.ResponseWriter, r *http.Request) {
 	_, err := h.svc.ProcessStartPing(r.Context(), uuid, sourceIP, r.Method)
 	if err != nil {
 		if errors.Is(err, heartbeat.ErrHeartbeatNotFound) {
-			WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this UUID")
+			WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this token")
 			return
 		}
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to process start ping")
@@ -86,7 +86,7 @@ func (h *PingHandler) HandleStartPing(w http.ResponseWriter, r *http.Request) {
 func (h *PingHandler) HandleExitCodePing(w http.ResponseWriter, r *http.Request) {
 	uuid := r.PathValue("uuid")
 	if uuid == "" {
-		WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this UUID")
+		WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this token")
 		return
 	}
 
@@ -114,7 +114,7 @@ func (h *PingHandler) HandleExitCodePing(w http.ResponseWriter, r *http.Request)
 	_, err = h.svc.ProcessExitCodePing(r.Context(), uuid, exitCode, sourceIP, r.Method, payload)
 	if err != nil {
 		if errors.Is(err, heartbeat.ErrHeartbeatNotFound) {
-			WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this UUID")
+			WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this token")
 			return
 		}
 		if errors.Is(err, heartbeat.ErrInvalidExitCode) {
