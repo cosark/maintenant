@@ -66,6 +66,16 @@ func SPAHandler(apiHandler http.Handler, logger *slog.Logger) http.Handler {
 	})
 }
 
+// noStoreAPI marks every /api/v1/ answer as never to be stored; an SSE handler overrides it with no-cache.
+func noStoreAPI(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/v1/") && w.Header().Get("Cache-Control") == "" {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
 // IsStreamingPath reports whether path corresponds to an SSE or streaming endpoint.
 func IsStreamingPath(path string) bool {
 	if path == "/api/v1/containers/events" || path == "/status/events" {
@@ -356,7 +366,7 @@ func (a *App) buildHTTPServer() *http.Server {
 	}
 
 	a.statusHandler.Register(topMux, a.rl.Middleware)
-	topMux.Handle("/api/", a.apiRL.Middleware(a.router.Handler()))
+	topMux.Handle("/api/", noStoreAPI(a.apiRL.Middleware(a.router.Handler())))
 	topMux.Handle("/ping/", a.router.Handler())
 	topMux.Handle("/", SPAHandler(a.router.Handler(), a.logger))
 
