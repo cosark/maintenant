@@ -66,6 +66,7 @@ Conventions used below:
 | `MAINTENANT_MCP_CLIENT_ID` | — | OAuth 2 client ID for `/mcp`. |
 | `MAINTENANT_MCP_CLIENT_SECRET` | — | OAuth 2 client secret for `/mcp`. Use at least 32 characters (`openssl rand -hex 32`): a shorter secret logs a warning at startup. |
 | `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` | — | Comma-separated redirect URIs accepted by `/oauth/authorize`, matched exactly. Loopback addresses (`localhost`, `127.0.0.1`, `::1`) are always accepted, so the list is only needed for hosted clients such as `https://claude.ai/api/mcp/auth_callback`. |
+| `MAINTENANT_MCP_SOCKET` | `false` | Serve the local `mcp.sock` socket (mode `0600`, next to the database) that `--mcp-stdio` relays to, without opening `/mcp`. `MAINTENANT_MCP=true` serves it too; with neither, `--mcp-stdio` cannot reach the instance. Never served in agent mode. |
 | `MAINTENANT_MCP_READ_ONLY` | `false` | Register only the 34 read-only MCP tools, on `/mcp` and on the local socket: the 17 write tools do not exist. See [MCP Server](../features/mcp.md#read-only-mode). |
 | `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` | `false` | Serve `/mcp` with no authentication. Without it, `MAINTENANT_MCP=true` without both credentials stops the startup. Trusted networks only. |
 

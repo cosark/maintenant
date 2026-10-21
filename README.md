@@ -243,7 +243,7 @@ claude -p "maintenant just fired this alert: {...} Investigate it read-only." \
                  mcp__maintenant__get_endpoint_history mcp__maintenant__get_resources
 ```
 
-`mcp.json` reaches maintenant over stdio with `docker exec -i maintenant /app/maintenant --mcp-stdio`, so no MCP port is opened. Point a webhook channel at the receiver with an `Authorization: Bearer <token>` header and route alerts to it with a trigger. The [AI agents guide](https://docs.maintenant.dev/guides/ai-agents/) walks through the setup.
+`mcp.json` reaches maintenant over stdio with `docker exec -i maintenant /app/maintenant --mcp-stdio`, so no MCP port is opened: start maintenant with `MAINTENANT_MCP_SOCKET=true` to serve the local socket it relays to. Point a webhook channel at the receiver with an `Authorization: Bearer <token>` header and route alerts to it with a trigger. The [AI agents guide](https://docs.maintenant.dev/guides/ai-agents/) walks through the setup.
 
 **With OpenCode**, the same receiver calls `opencode run` instead of `claude -p`, with maintenant declared as a local MCP server in `opencode.json`. **With n8n**, a Webhook trigger feeds an AI Agent node whose MCP Client tool points at your instance's `/mcp` endpoint.
 

@@ -59,7 +59,9 @@ Only registered when `MAINTENANT_MCP=true`, and never in [demo mode](#demo-mode)
 !!! warning "MCP without credentials refuses to start"
     `MAINTENANT_MCP=true` **without** `MAINTENANT_MCP_CLIENT_ID` and `MAINTENANT_MCP_CLIENT_SECRET` would serve `/mcp` to anyone. Since `/mcp` bypasses proxy auth, an incomplete `.env` would publish your monitoring data, so maintenant refuses to listen and names the missing variables.
 
-    To run MCP unauthenticated anyway (a local instance on a trusted network), set `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED=true`. The startup log then carries a `WARN` for as long as it stays that way, and only `/mcp` is registered: there are no OAuth routes. `--mcp-stdio` is unaffected: it goes through a local Unix socket and needs no credentials.
+    To run MCP unauthenticated anyway (a local instance on a trusted network), set `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED=true`. The startup log then carries a `WARN` for as long as it stays that way, and only `/mcp` is registered: there are no OAuth routes.
+
+The local `mcp.sock` socket that `--mcp-stdio` relays to is not an HTTP route and never goes through the proxy. It is created only when `MAINTENANT_MCP=true` or `MAINTENANT_MCP_SOCKET=true`, next to the database with mode `0600`, and never in agent mode.
 
 ### Protected Routes
 
@@ -395,7 +397,7 @@ When `MAINTENANT_MCP_CLIENT_ID` and `MAINTENANT_MCP_CLIENT_SECRET` are both conf
 - **Read-only mode**: with `MAINTENANT_MCP_READ_ONLY=true`, the 17 write tools are not registered at all, whatever the scope. Without it, `/mcp` with a `read write` token is an admin API, as powerful as the dashboard
 - **Host header**: with OAuth configured, `/mcp` accepts any `Host`, so a proxy on the same machine can forward the public hostname. With `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` on a loopback listener, a request with a non-loopback `Host` is refused with `403` (the MCP SDK's DNS rebinding protection)
 
-The stdio transport (`--mcp-stdio`) requires no authentication: it relays to the `mcp.sock` Unix socket next to the database, which only the user maintenant runs as can open (mode `0600`).
+The stdio transport (`--mcp-stdio`) requires no authentication: it relays to the `mcp.sock` Unix socket next to the database, which only the user maintenant runs as can open (mode `0600`, set from its creation). The socket is served only when `MAINTENANT_MCP=true` or `MAINTENANT_MCP_SOCKET=true`, never in agent mode, and gives full access to every registered tool: it carries no token, so scopes do not apply, but read-only mode does.
 
 See [MCP Server](features/mcp.md) for full configuration and usage details.
 

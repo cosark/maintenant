@@ -973,10 +973,12 @@ func (a *App) Start(ctx context.Context) error {
 		a.startEmbeddedAgent(ctx)
 	}
 
-	if a.cfg.Mode != "agent" {
+	if a.cfg.Mode != "agent" && (a.cfg.MCP.Enabled || a.cfg.MCP.Socket) {
 		if err := mcp.ServeSocket(ctx, a.mcpServer, mcp.SocketPath(a.cfg.DBPath), a.logger); err != nil {
 			a.logger.Warn("local MCP socket unavailable, --mcp-stdio cannot reach this instance", "error", err)
 		}
+	} else if a.cfg.Mode != "agent" {
+		a.logger.Info("local MCP socket not served", "enable", "MAINTENANT_MCP=true or MAINTENANT_MCP_SOCKET=true")
 	}
 
 	// HTTP server — never in agent mode: an agent only streams to the server and

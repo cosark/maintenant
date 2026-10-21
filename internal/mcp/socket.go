@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -26,7 +27,9 @@ func ServeSocket(ctx context.Context, server *gomcp.Server, path string, logger 
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove stale MCP socket: %w", err)
 	}
+	old := syscall.Umask(0o077)
 	ln, err := net.Listen("unix", path)
+	syscall.Umask(old)
 	if err != nil {
 		return fmt.Errorf("listen on MCP socket: %w", err)
 	}
@@ -64,7 +67,7 @@ func Relay(ctx context.Context, path string, in io.Reader, out io.Writer) error 
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "unix", path)
 	if err != nil {
-		return fmt.Errorf("no running maintenant instance serves MCP at %s: %w", path, err)
+		return fmt.Errorf("no running maintenant instance serves MCP at %s (start it with MAINTENANT_MCP=true or MAINTENANT_MCP_SOCKET=true): %w", path, err)
 	}
 	defer func() { _ = conn.Close() }()
 
