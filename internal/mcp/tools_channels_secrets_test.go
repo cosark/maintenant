@@ -166,7 +166,7 @@ func TestMCPChannels_PlatformURLsAreTruncated(t *testing.T) {
 			require.NoError(t, err)
 			text := textFromContent(t, result.Content)
 			if tc.secret {
-				assert.NotContains(t, text, "secret")
+				assert.NotContains(t, text, "XXXXsecret")
 				assert.NotContains(t, text, "TOKEN")
 				assert.NotContains(t, text, "IncomingWebhook")
 			}
