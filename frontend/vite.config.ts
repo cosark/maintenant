@@ -50,7 +50,7 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
           {
-            urlPattern: /\/api\/v1\/(containers\/[^\/]+\/logs|status\/subscribers|escalation-policies|agents|security|cve)/,
+            urlPattern: /\/api\/v1\/(containers\/[^\/]+\/logs|status\/subscribers|escalation-policies|escalation-runs|alerts\/[^\/]+\/escalation-runs|agents|security|cve)/,
             handler: 'NetworkOnly',
           },
           {
