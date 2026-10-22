@@ -26,6 +26,7 @@
   ansible.builtin.get_url:
     url: "{{ opensvc_repo_key_url }}"
     dest: "{{ opensvc_keyring }}"
+    force: true
     mode: "0644"
 
 - name: Declare the OpenSVC repository
