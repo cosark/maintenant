@@ -337,7 +337,6 @@ jobs:
       id-token: write
 
     env:
-      CHART_REGISTRY: ghcr.io
       CHART_REPOSITORY: oci://ghcr.io/kolapsis/charts
 
     steps:
@@ -373,11 +372,13 @@ jobs:
             --destination chart-dist
           test -s "chart-dist/maintenant-${version}.tgz"
 
+      # helm registry login fills Helm's own store, which cosign never reads.
       - name: Login to GitHub Container Registry
-        env:
-          GH_ACTOR: ${{ github.actor }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: printf '%s' "$GH_TOKEN" | helm registry login "$CHART_REGISTRY" --username "$GH_ACTOR" --password-stdin
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push the chart
         id: push
