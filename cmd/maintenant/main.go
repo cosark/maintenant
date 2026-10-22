@@ -190,6 +190,7 @@ func main() {
 			NodeName:            cfg.MultiHost.NodeName,
 			AgentVersion:        version,
 			InsecureSkipVerify:  cfg.MultiHost.InsecureSkipVerify,
+			ServerFingerprint:   cfg.MultiHost.ServerFingerprint,
 			ProxyLabels:         cfg.ProxyLabels,
 			SpoolMaxMemoryBytes: cfg.MultiHost.AgentSpoolMaxMemoryBytes,
 			SpoolMaxDiskBytes:   cfg.MultiHost.AgentSpoolMaxDiskBytes,

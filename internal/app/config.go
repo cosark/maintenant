@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -48,6 +49,7 @@ type Config struct {
 	// TrustedProxies lists the CIDRs and addresses whose forwarded headers are
 	// believed, comma-separated. Empty means no header is ever read.
 	TrustedProxies string
+	AllowedHosts   string
 
 	// CACertFile is a PEM bundle appended to the system roots, so endpoints and
 	// certificates signed by an internal PKI validate without disabling checks.
@@ -117,6 +119,7 @@ type MultiHostConfig struct {
 	Label                    string
 	NodeName                 string
 	InsecureSkipVerify       bool
+	ServerFingerprint        string
 	EmbeddedAgent            bool
 	AgentSpoolMaxMemoryBytes int64
 	AgentSpoolMaxDiskBytes   int64
@@ -159,6 +162,8 @@ type SMTPConfig struct {
 	Username string
 	Password string
 	From     string
+
+	AllowPlaintext bool
 }
 
 // MCPConfig holds Model Context Protocol server configuration.
@@ -170,6 +175,8 @@ type MCPConfig struct {
 	// AllowUnauthenticated is the explicit opt-out for serving /mcp with no
 	// OAuth at all; without it, MCP without credentials refuses to listen.
 	AllowUnauthenticated bool
+	ReadOnly             bool
+	Socket               bool
 }
 
 // ErrMCPUnauthenticated refuses to expose an MCP server that answers to anyone.
@@ -319,6 +326,9 @@ func (c Config) ValidateHTTP() error {
 		(c.MCP.ClientID == "" || c.MCP.ClientSecret == "") {
 		return ErrMCPUnauthenticated
 	}
+	if _, err := c.StatusHost(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -371,6 +381,8 @@ func ConfigFromEnv() Config {
 			Username: os.Getenv("MAINTENANT_SMTP_USERNAME"),
 			Password: os.Getenv("MAINTENANT_SMTP_PASSWORD"),
 			From:     envOr("MAINTENANT_SMTP_FROM", "maintenant@localhost"),
+
+			AllowPlaintext: parseTruthy(os.Getenv("MAINTENANT_SMTP_ALLOW_PLAINTEXT")),
 		},
 
 		MCP: MCPConfig{
@@ -379,10 +391,13 @@ func ConfigFromEnv() Config {
 			ClientSecret:         os.Getenv("MAINTENANT_MCP_CLIENT_SECRET"),
 			AllowedRedirectURIs:  os.Getenv("MAINTENANT_MCP_ALLOWED_REDIRECT_URIS"),
 			AllowUnauthenticated: parseTruthy(os.Getenv("MAINTENANT_MCP_ALLOW_UNAUTHENTICATED")),
+			ReadOnly:             parseTruthy(os.Getenv("MAINTENANT_MCP_READ_ONLY")),
+			Socket:               parseTruthy(os.Getenv("MAINTENANT_MCP_SOCKET")),
 		},
 
 		CORSOrigins:    os.Getenv("MAINTENANT_CORS_ORIGINS"),
 		TrustedProxies: os.Getenv("MAINTENANT_TRUSTED_PROXIES"),
+		AllowedHosts:   os.Getenv("MAINTENANT_ALLOWED_HOSTS"),
 		CACertFile:     os.Getenv("MAINTENANT_CA_CERT"),
 
 		OrgName:   envOr("MAINTENANT_ORGANISATION_NAME", "Maintenant"),
@@ -432,6 +447,7 @@ func ConfigFromEnv() Config {
 		Label:                      os.Getenv("MAINTENANT_LABEL"),
 		NodeName:                   os.Getenv("MAINTENANT_NODE_NAME"),
 		InsecureSkipVerify:         parseTruthy(os.Getenv("MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY")),
+		ServerFingerprint:          os.Getenv("MAINTENANT_GRPC_SERVER_FINGERPRINT"),
 		EmbeddedAgent:              parseTruthy(os.Getenv("MAINTENANT_EMBEDDED_AGENT")),
 	}
 
@@ -507,4 +523,55 @@ func envDurationOr(key string, fallback time.Duration) time.Duration {
 		}
 	}
 	return fallback
+}
+
+// ErrStatusURL refuses a status page URL whose host name cannot be read.
+var ErrStatusURL = errors.New("MAINTENANT_STATUS_URL must be an http or https URL with a host, such as https://status.example.com")
+
+// StatusHost returns the lowercase host name of MAINTENANT_STATUS_URL, or "" when it is unset.
+func (c Config) StatusHost() (string, error) {
+	if c.StatusURL == "" {
+		return "", nil
+	}
+	u, err := url.Parse(c.StatusURL)
+	if err != nil {
+		return "", fmt.Errorf("%w (%v)", ErrStatusURL, err)
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return "", fmt.Errorf("%w (got %q)", ErrStatusURL, c.StatusURL)
+	}
+	return strings.ToLower(u.Hostname()), nil
+}
+
+// urlHostname returns the lowercase host name of raw, or "" when it has none.
+func urlHostname(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
+}
+
+// AllowedHostSet returns the host names the API and the dashboard answer to.
+func (c Config) AllowedHostSet() map[string]struct{} {
+	set := map[string]struct{}{"localhost": {}, "127.0.0.1": {}, "::1": {}}
+	add := func(h string) bool {
+		if h == "" || h == "0.0.0.0" || h == "::" {
+			return false
+		}
+		set[h] = struct{}{}
+		return true
+	}
+	add(hostname(c.Addr))
+	explicit := false
+	for _, entry := range strings.Split(c.AllowedHosts, ",") {
+		if add(hostname(strings.TrimSpace(entry))) {
+			explicit = true
+		}
+	}
+	if !explicit {
+		add(urlHostname(c.BaseURL))
+		add(urlHostname(c.StatusURL))
+	}
+	return set
 }

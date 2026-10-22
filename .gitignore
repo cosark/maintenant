@@ -61,3 +61,4 @@ specs/
 /compose.agent.yml
 /compose.proxylabels.yml
 /compose.agent-remote.yml
+__pycache__/

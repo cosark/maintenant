@@ -8,7 +8,6 @@ import { computed, ref } from 'vue'
 import { useChannelsStore } from '@/stores/channels'
 import { useConfirm } from '@/composables/useConfirm'
 import {
-  createChannel,
   updateChannel,
   deleteChannel,
   testChannel,
@@ -37,11 +36,16 @@ const form = ref({
   enabled: true,
 })
 const editingHasSecret = ref(false)
+const editingHasHeaders = ref(false)
+const HEADERS_EXAMPLE = '{"Authorization": "Bearer ..."}'
+const editingUrlOnFile = ref('')
 const testResult = ref<{ id: string; status: string; response_code?: number; error?: string } | null>(null)
 
 function resetForm() {
   form.value = { name: '', type: 'webhook', url: '', headers: '', secret: '', threadId: '', enabled: true }
   editingHasSecret.value = false
+  editingHasHeaders.value = false
+  editingUrlOnFile.value = ''
   editingId.value = null
   showForm.value = false
 }
@@ -57,13 +61,15 @@ function startEdit(ch: NotificationChannel) {
   form.value = {
     name: ch.name,
     type: ch.type,
-    url: ch.url,
-    headers: ch.headers,
+    url: ch.has_url_secret ? '' : ch.url,
+    headers: '',
     secret: '',
     threadId,
     enabled: ch.enabled,
   }
   editingHasSecret.value = ch.has_secret ?? false
+  editingHasHeaders.value = ch.has_headers ?? false
+  editingUrlOnFile.value = ch.has_url_secret ? ch.url : ''
   showForm.value = true
   showWizard.value = false
 }
@@ -89,20 +95,18 @@ function channelTarget(ch: NotificationChannel): string {
 }
 
 async function submitForm() {
+  if (!editingId.value) return
+  // Empty url or headers keep the stored values, which the server only sends back masked.
   const payload = {
     name: form.value.name,
-    url: form.value.url,
-    headers: form.value.headers,
+    ...(form.value.url ? { url: form.value.url } : {}),
+    ...(form.value.headers ? { headers: form.value.headers } : {}),
     enabled: form.value.enabled,
     // Omitted when left empty, so the stored token survives an edit (FR-006).
     ...(isTelegram.value && form.value.secret ? { secret: form.value.secret } : {}),
     ...(isTelegram.value ? { config: { thread_id: form.value.threadId } } : {}),
   }
-  if (editingId.value) {
-    await updateChannel(editingId.value, payload)
-  } else {
-    await createChannel(payload)
-  }
+  await updateChannel(editingId.value, payload)
   resetForm()
   store.fetchChannels()
 }
@@ -182,12 +186,13 @@ function editionLabel(edition?: string): string {
             <TextInput :id="id" v-model="form.name" required :aria-describedby="describedBy" :invalid="invalid" />
           </template>
         </FormField>
-        <FormField :label="destinationLabel" required>
+        <FormField :label="destinationLabel" :required="!editingUrlOnFile">
           <template #default="{ id, describedBy, invalid }">
             <TextInput
               :id="id"
               v-model="form.url"
-              required
+              :required="!editingUrlOnFile"
+              :placeholder="editingUrlOnFile ? `${editingUrlOnFile}/… on file — leave empty to keep it` : undefined"
               :type="destinationInputType"
               :aria-describedby="describedBy"
               :invalid="invalid"
@@ -219,7 +224,7 @@ function editionLabel(edition?: string): string {
             <TextInput
               :id="id"
               v-model="form.headers"
-              placeholder='{"Authorization": "Bearer ..."}'
+              :placeholder="editingHasHeaders ? 'Headers on file — leave empty to keep them' : HEADERS_EXAMPLE"
               :aria-describedby="describedBy"
               :invalid="invalid"
             />

@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"os"
 
 	"github.com/mattn/go-sqlite3"
 )
@@ -69,6 +70,14 @@ func Open(dbPath string, logger *slog.Logger) (*DB, error) {
 	// writes the file header, and once that is done the pragma is silently
 	// ignored. The driver applies the DSN pragmas in the working order.
 	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL&_auto_vacuum=incremental&_busy_timeout=5000&_synchronous=NORMAL&_cache_size=-8000&_foreign_keys=ON", dbPath)
+
+	f, err := os.OpenFile(dbPath, os.O_RDWR|os.O_CREATE, 0o600) // #nosec G304 -- operator-configured database path
+	if err != nil {
+		return nil, fmt.Errorf("create sqlite file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return nil, fmt.Errorf("create sqlite file: %w", err)
+	}
 
 	db, err := sql.Open(driverName, dsn)
 	if err != nil {

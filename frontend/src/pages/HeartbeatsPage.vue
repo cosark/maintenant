@@ -214,7 +214,7 @@ async function handleCreate() {
       :doc-href="docUrl('features/heartbeats/#ping-url-format')"
     >
       Each monitor gets a unique public ping URL
-      (<code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">/ping/{uuid}</code>).
+      (<code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">/ping/{token}</code>).
       Hit it from a cron job, systemd timer, or any script to report success &mdash; append
       <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">/$?</code>
       to forward the exit code, or use

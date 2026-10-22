@@ -141,6 +141,7 @@ Every `MAINTENANT_*` environment variable in the table has a CLI equivalent. Pre
 | `--smtpUsername` | `MAINTENANT_SMTP_USERNAME` | string | _(unset)_ |
 | `--smtpPassword` | `MAINTENANT_SMTP_PASSWORD` | string | _(unset)_ |
 | `--smtpFrom` | `MAINTENANT_SMTP_FROM` | string | `maintenant@localhost` |
+| `--smtpAllowPlaintext` | `MAINTENANT_SMTP_ALLOW_PLAINTEXT` | bool | `false` |
 | `--mcp` | `MAINTENANT_MCP` | bool | `false` |
 | `--mcpClientId` | `MAINTENANT_MCP_CLIENT_ID` | string | _(unset)_ |
 | `--mcpClientSecret` | `MAINTENANT_MCP_CLIENT_SECRET` | string | _(unset)_ |
@@ -162,6 +163,7 @@ Every `MAINTENANT_*` environment variable in the table has a CLI equivalent. Pre
 | `--grpc-url` | `MAINTENANT_GRPC_URL` | string | _(unset)_ |
 | `--grpc-tls-cert` | `MAINTENANT_GRPC_TLS_CERT` | string | _(unset)_ |
 | `--grpc-tls-key` | `MAINTENANT_GRPC_TLS_KEY` | string | _(unset)_ |
+| `--grpc-server-fingerprint` | `MAINTENANT_GRPC_SERVER_FINGERPRINT` | string | _(unset)_ |
 | `--grpc-insecure-skip-tls-verify` | `MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY` | bool | `false` |
 | `--embedded-agent` | `MAINTENANT_EMBEDDED_AGENT` | bool | `false` |
 | `--grpc-tls-insecure` | `MAINTENANT_GRPC_TLS_INSECURE` | bool | `false` |

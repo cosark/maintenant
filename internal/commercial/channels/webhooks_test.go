@@ -188,7 +188,7 @@ func smtpStub(t *testing.T) (host, port string, data *strings.Builder, rcpt *[]s
 
 func TestSendTestWebhook_Email(t *testing.T) {
 	host, port, data, rcpt := smtpStub(t)
-	n := newTestNotifier(extpoint.SMTPConfig{Host: host, Port: port, From: "maintenant@example.com"})
+	n := newTestNotifier(extpoint.SMTPConfig{Host: host, Port: port, From: "maintenant@example.com", AllowPlaintext: true})
 	require.True(t, n.SMTPConfigured())
 
 	code, err := n.SendTestWebhook(context.Background(), &alert.NotificationChannel{Type: "email", URL: "ops@example.com"})
@@ -200,7 +200,7 @@ func TestSendTestWebhook_Email(t *testing.T) {
 
 func TestSendNow_Email(t *testing.T) {
 	host, port, data, _ := smtpStub(t)
-	n := newTestNotifier(extpoint.SMTPConfig{Host: host, Port: port, From: "maintenant@example.com"})
+	n := newTestNotifier(extpoint.SMTPConfig{Host: host, Port: port, From: "maintenant@example.com", AllowPlaintext: true})
 
 	err := n.SendNow(context.Background(), firedAlert(), &alert.NotificationChannel{Type: "email", URL: "ops@example.com"})
 	require.NoError(t, err)
