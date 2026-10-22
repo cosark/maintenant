@@ -52,9 +52,9 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://{host}/mcp",
+      "url": "https://{maintenant_host}/mcp",
       "variables": {
-        "host": {
+        "maintenant_host": {
           "description": "Hostname of your own maintenant instance, e.g. maintenant.example.com. Needs MAINTENANT_MCP=true and OAuth2 client credentials on the server.",
           "isRequired": true,
           "placeholder": "maintenant.example.com"
