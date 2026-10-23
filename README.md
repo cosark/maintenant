@@ -90,6 +90,13 @@ Endpoints, certificates and heartbeats work without any container runtime. Conta
 
 ---
 
+## One-Click Deploy
+
+<a href="https://repocloud.io/details/Maintenant/"><img src="https://d16t0pc4846x52.cloudfront.net/deploylobe.svg" alt="Deploy on RepoCloud" height="42"></a>
+<a href="https://railway.com/deploy/maintenant"><img src="https://railway.com/button.svg" alt="Deploy on Railway" height="42"></a>
+
+---
+
 ## Why maintenant?
 
 Monitoring your own infrastructure with the standard stack means running Prometheus, Grafana, Alertmanager, node-exporter, cAdvisor, blackbox-exporter, a certificate exporter, Loki, Promtail, Trivy and something for image updates. Ten-odd components, each with its own config, upgrades and dashboards, to answer one question: **is my stack up, and what is burning?**
